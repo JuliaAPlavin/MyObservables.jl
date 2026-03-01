@@ -199,8 +199,7 @@ end
 
 # ── Stale edge cleanup ─────────────────────────────────────────────
 function cleanup_stale_deps!(node::AbstractNode, old_deps::Vector{AbstractNode})
-    new_deps_set = Set(node.deps)
-    for old in setdiff(old_deps, new_deps_set)
+    for old in setdiff(old_deps, node.deps)
         delete!(old.users, node)
         if old isa Computed && isempty(old.users)
             unsubscribe!(old)
