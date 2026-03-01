@@ -133,6 +133,41 @@ end
     @test log == [10, 99, 7]
 end
 
+@testitem "peek (untracked read)" begin
+    using MyObservables
+
+    rt = Runtime()
+    s = signal(rt, 10)
+    other = signal(rt, 99)
+
+    # peek reads current value without tracking
+    c = computed(rt) do
+        s[] + peek(other)  # depends on s, NOT on other
+    end
+
+    @test c[] == 109
+
+    other[] = 1  # c should NOT recompute — other is not a dep
+    @test c[] == 109  # cached, not dirty
+
+    s[] = 20  # c recomputes, picks up other's current value (1)
+    @test c[] == 21
+
+    # peek on dirty computed triggers update but doesn't track
+    s[] = 30
+    log = Int[]
+    e = effect!(rt) do
+        push!(log, peek(c))  # reads c without tracking
+        s[]                   # only depends on s
+    end
+    @test log == [31]
+    s[] = 40
+    @test log == [31, 41]  # effect re-runs (s changed), peek(c) returns fresh value
+
+    other[] = 100  # c is not a dep of e, so e doesn't re-run
+    @test log == [31, 41]
+end
+
 @testitem "batching" begin
     using MyObservables
 

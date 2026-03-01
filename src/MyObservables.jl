@@ -159,6 +159,15 @@ function Base.getindex(c::Computed{T})::T where {T}
     return c.value
 end
 
+# ── Untracked read ────────────────────────────────────────────────
+Base.peek(s::Signal) = s.value
+
+function Base.peek(c::Computed{T})::T where {T}
+    c.state == COMPUTING && error("Cycle detected: a Computed depends on itself")
+    c.state == DIRTY && update!(c)
+    return c.value
+end
+
 # ── Pull-to-recompute ──────────────────────────────────────────────
 function update!(c::Computed)
     c.state == COMPUTING && error("Cycle detected: a Computed depends on itself")
