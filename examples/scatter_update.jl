@@ -1,21 +1,15 @@
 using MyObservables
+using MyObservables: @lift
 using GLMakie
 
-rt = Runtime()
-n = signal(rt, 100)
-data = computed(rt) do
-    [(i, sin(0.1*i)) for i in 0:n[]]
-end
+n = signal(Runtime(), 100)
+data = @lift [(i, sin(0.1*i)) for i in 0:$n]
 
-xs = computed(rt) do
-    first.(data[])
-end
-ys = computed(rt) do
-    last.(data[])
-end
+xs = @lift first.($data)
+ys = @lift last.($data)
 
-obs_xs = to_observable(xs)
-obs_ys = to_observable(ys)
+obs_xs = to_obs(xs)
+obs_ys = to_obs(ys)
 
 fig = Figure()
 ax = Axis(fig[1, 1])

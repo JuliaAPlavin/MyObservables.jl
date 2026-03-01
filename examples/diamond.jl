@@ -1,26 +1,22 @@
 using MyObservables
+using MyObservables: @lift
 using GLMakie
 
-rt = Runtime()
-t = signal(rt, 0.0)
+t = signal(Runtime(), 0.0)
 
 # Diamond split: two branches from same source
-branch_a = computed(rt) do
-    [t[] + i for i in 1:10]
-end
-branch_b = computed(rt) do
-    [sin(t[] + i) for i in 1:10]
-end
+branch_a = @lift [$t + i for i in 1:10]
+branch_b = @lift [sin($t + i) for i in 1:10]
 
 # Diamond join: expensive calculation using both branches
 calc_count = Ref(0)
-result = computed(rt) do
+result = @lift let
     calc_count[] += 1
     println("expensive calculation #$(calc_count[])")
-    branch_a[] .* branch_b[]
+    $branch_a .* $branch_b
 end
 
-obs_result = to_observable(result)
+obs_result = to_obs(result)
 
 fig = Figure()
 ax = Axis(fig[1, 1]; title="MyObservables: pull-based, no redundant calculations")

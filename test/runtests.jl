@@ -274,7 +274,7 @@ end
         sin(x[])
     end
 
-    obs = to_observable(y)
+    obs = to_obs(y)
     @test obs isa Observable
     @test obs[] ≈ sin(1.0)
 
@@ -284,6 +284,55 @@ end
     dispose_bridge!(rt, obs)
     x[] = 0.0
     @test obs[] ≈ 1.0  # no longer updated
+end
+
+@testitem "@lift macro" begin
+    using MyObservables
+    using MyObservables.Lift
+
+    rt = Runtime()
+    a = signal(rt, 1)
+    b = signal(rt, 2)
+
+    c = @lift($a + $b)
+    @test c isa MyObservables.Computed
+    @test c[] == 3
+
+    a[] = 10
+    @test c[] == 12
+
+    b[] = 5
+    @test c[] == 15
+
+    # complex expression
+    x = signal(rt, 3.0)
+    y = signal(rt, 4.0)
+    hyp = @lift(sqrt($x^2 + $y^2))
+    @test hyp[] == 5.0
+    x[] = 5.0
+    y[] = 12.0
+    @test hyp[] == 13.0
+
+    # computed inputs
+    doubled = computed(rt) do; x[] * 2; end
+    z = @lift($doubled + $y)
+    @test z[] == 22.0
+
+    # nested property access
+    nt = (sig = signal(rt, [1, 2, 3]),)
+    len = @lift(length($(nt.sig)) + 1)
+    @test len[] == 4
+    nt.sig[] = [1, 2]
+    @test len[] == 3
+
+    # with effects
+    log = Int[]
+    e = effect!(rt) do
+        push!(log, c[])
+    end
+    @test log == [15]
+    a[] = 3
+    @test log == [15, 8]
 end
 
 @testitem "CairoMakie integration" begin
@@ -301,8 +350,8 @@ end
         last.(data[])
     end
 
-    obs_xs = to_observable(xs)
-    obs_ys = to_observable(ys)
+    obs_xs = to_obs(xs)
+    obs_ys = to_obs(ys)
 
     fig = Figure()
     ax = Axis(fig[1, 1]; limits=(-1, 3, -2, 2))
@@ -334,8 +383,8 @@ end
         last.(data[])
     end
 
-    obs_xs = to_observable(xs)
-    obs_ys = to_observable(ys)
+    obs_xs = to_obs(xs)
+    obs_ys = to_obs(ys)
 
     fig = Figure()
     ax = Axis(fig[1, 1]; limits=(-1, 4, -2, 2))

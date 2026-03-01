@@ -8,7 +8,7 @@ branch_b = @lift [sin($t + i) for i in 1:10]
 
 # Diamond join: expensive calculation using both branches
 calc_count = Ref(0)
-result = @lift begin
+result = @lift let
     calc_count[] += 1
     println("expensive calculation #$(calc_count[])")
     $branch_a .* $branch_b

@@ -4,7 +4,7 @@ using MyObservables
 import MyObservables: AbstractNode, Signal, Computed, EffectNode, Runtime
 import Observables: Observable
 
-function MyObservables.to_observable(node::Union{Signal{T},Computed{T}}) where {T}
+function MyObservables.to_obs(node::Union{Signal{T},Computed{T}}) where {T}
     rt = node.runtime
     obs = Observable{T}(node[])
     e = effect!(rt) do

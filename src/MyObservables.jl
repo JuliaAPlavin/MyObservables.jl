@@ -1,7 +1,7 @@
 module MyObservables
 
 export Runtime, Signal, Computed, EffectNode
-export signal, computed, effect!, dispose!, batch, to_observable, dispose_bridge!
+export signal, computed, effect!, dispose!, batch, to_obs, dispose_bridge!
 export runtime
 
 # ── Node state ──────────────────────────────────────────────────────
@@ -273,7 +273,9 @@ function dispose!(e::EffectNode)
 end
 
 # ── Observable bridge stubs (overridden by ext/ObservablesExt.jl) ──
-function to_observable end
+function to_obs end
 function dispose_bridge! end
+
+include("lift_macro.jl")
 
 end # module
