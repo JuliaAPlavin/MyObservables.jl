@@ -1,0 +1,3 @@
+module MyObservables
+
+end
