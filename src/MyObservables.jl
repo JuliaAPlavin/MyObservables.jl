@@ -112,7 +112,6 @@ function execute_tracked!(f, node::AbstractNode)
     try
         result = f()
         cleanup_stale_deps!(node, old_deps)
-        unique!(node.deps)
         node.dep_versions = map(d -> d.version, node.deps)
         return result
     catch
@@ -140,6 +139,7 @@ end
 # ── Dependency tracking ─────────────────────────────────────────────
 function track!(consumer::AbstractNode, provider::AbstractNode)
     @assert consumer.runtime === provider.runtime "Nodes belong to different runtimes"
+    provider in consumer.deps && return
     push!(consumer.deps, provider)
     push!(provider.users, consumer)
 end
