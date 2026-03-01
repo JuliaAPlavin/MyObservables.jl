@@ -286,6 +286,34 @@ end
     @test log == [10]
 end
 
+@testitem "effect error clears pending effects" begin
+    using MyObservables
+
+    rt = Runtime()
+    s = signal(rt, 0)
+
+    log = Int[]
+    e_good = effect!(rt) do
+        push!(log, s[])
+    end
+    e_bad = effect!(rt) do
+        v = s[]
+        v > 0 && error("boom")
+    end
+
+    @test log == [0]
+
+    # Use batch + reorder to ensure e_bad runs first in flush
+    @test_throws ErrorException batch(rt) do
+        s[] = 1
+        filter!(e -> e !== e_bad, rt.pending_effects)
+        pushfirst!(rt.pending_effects, e_bad)
+    end
+
+    # Bug: e_good should NOT linger in pending_effects
+    @test isempty(rt.pending_effects)
+end
+
 @testitem "cycle detection" begin
     using MyObservables
 

@@ -250,7 +250,12 @@ function flush!(rt::Runtime)
     while !isempty(rt.pending_effects)
         e = popfirst!(rt.pending_effects)
         (e.disposed || e.state != DIRTY) && continue
-        run_effect!(e)
+        try
+            run_effect!(e)
+        catch
+            empty!(rt.pending_effects)
+            rethrow()
+        end
     end
 end
 
