@@ -187,32 +187,32 @@ end
     rt = Runtime()
     s = signal(rt, 1)
 
-    # Default: always propagate even when value unchanged
+    # Default: always propagate even when value not === (but ==)
     c_default = computed(rt) do
-        s[] > 0 ? :positive : :negative
+        s[] > 0 ? [1] : [0]
     end
-    log_default = Symbol[]
+    log_default = Vector{Int}[]
     e1 = effect!(rt) do
         push!(log_default, c_default[])
     end
-    @test log_default == [:positive]
-    s[] = 2  # c still returns :positive
-    @test log_default == [:positive, :positive]  # effect re-runs (always propagate)
+    @test log_default == [[1]]
+    s[] = 2  # c returns a new [1] — not === to previous
+    @test log_default == [[1], [1]]  # effect re-runs (always propagate)
 
-    # Opt-in: skip_equal suppresses when value unchanged
+    # Opt-in: skip_equal suppresses when value isequal
     s[] = 3
     c_skip = computed(rt; skip_equal=true) do
-        s[] > 0 ? :positive : :negative
+        s[] > 0 ? [1] : [0]
     end
-    log_skip = Symbol[]
+    log_skip = Vector{Int}[]
     e2 = effect!(rt) do
         push!(log_skip, c_skip[])
     end
-    @test log_skip == [:positive]
-    s[] = 4  # c_skip still returns :positive
-    @test log_skip == [:positive]  # effect suppressed
-    s[] = -1  # c_skip now returns :negative — value changed
-    @test log_skip == [:positive, :negative]  # effect runs
+    @test log_skip == [[1]]
+    s[] = 4  # c_skip returns new [1] — isequal to previous
+    @test log_skip == [[1]]  # effect suppressed
+    s[] = -1  # c_skip now returns [0] — value changed
+    @test log_skip == [[1], [0]]  # effect runs
 end
 
 @testitem "lazy pull skips unused stale deps" begin
