@@ -288,7 +288,7 @@ end
 
 @testitem "@lift macro" begin
     using MyObservables
-    using MyObservables.Lift
+    using MyObservables: @lift
 
     rt = Runtime()
     a = signal(rt, 1)
@@ -399,4 +399,42 @@ end
 
     @test p[1][] == Point2f[(0, 0), (1, 1), (2, -1), (3, 1.5)]
     @test buf1 != buf2
+end
+
+@testitem "CairoMakie direct nodes" begin
+    using MyObservables
+    using MyObservables: @lift
+    using CairoMakie
+    using CairoMakie.Makie: Point2f
+
+    rt = Runtime()
+    data = signal(rt, [(0.0, 0.0), (1.0, 1.0), (2.0, 0.0)])
+
+    xs = @lift first.($data)
+    ys = @lift last.($data)
+    colors = signal(rt, [:red, :green, :blue])
+    title = signal(rt, "initial title")
+
+    fig = Figure()
+    ax = Axis(fig[1, 1]; limits=(-1, 3, -2, 2), title=title)
+    p = scatter!(ax, xs, ys; markersize=20, color=colors)
+
+    buf1 = copy(colorbuffer(fig))
+    @test p[1][] == Point2f[(0, 0), (1, 1), (2, 0)]
+
+    # Update source — plot should reflect new data
+    data[] = [(0.0, 1.5), (1.0, -1.5), (2.0, 1.5)]
+    buf2 = copy(colorbuffer(fig))
+    @test p[1][] == Point2f[(0, 1.5), (1, -1.5), (2, 1.5)]
+    @test buf1 != buf2
+
+    # Update color attribute
+    colors[] = [:blue, :red, :green]
+    buf3 = copy(colorbuffer(fig))
+    @test buf2 != buf3
+
+    # Update title attribute
+    title[] = "updated title"
+    @test ax.title[] == "updated title"
+
 end

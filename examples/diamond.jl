@@ -16,11 +16,9 @@ result = @lift let
     $branch_a .* $branch_b
 end
 
-obs_result = to_obs(result)
-
 fig = Figure()
 ax = Axis(fig[1, 1]; title="MyObservables: pull-based, no redundant calculations")
-lines!(ax, obs_result)
+lines!(ax, result)
 
 display(fig)
 
