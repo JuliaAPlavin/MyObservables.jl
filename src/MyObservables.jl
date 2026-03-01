@@ -175,7 +175,7 @@ function update!(c::Computed)
 
     local new_value
     try
-        if isdefined(c, :value) && !deps_changed!(c)
+        if c.version > 0 && !deps_changed!(c)
             c.state = CLEAN
             return nothing
         end
@@ -186,8 +186,7 @@ function update!(c::Computed)
         rethrow()
     end
 
-    had_value = isdefined(c, :value)
-    changed = !had_value || value_changed(c.value, new_value, c.skip_equal)
+    changed = c.version == 0 || value_changed(c.value, new_value, c.skip_equal)
     c.value = new_value
     c.state = CLEAN
     changed && (c.version += 1)
