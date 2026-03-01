@@ -135,6 +135,12 @@ function update!(c::Computed)
     local new_value
     try
         new_value = c.f()
+    catch
+        new_partial = c.deps
+        c.deps = old_deps
+        cleanup_stale_deps!(c, new_partial)
+        c.state = DIRTY
+        rethrow()
     finally
         rt.current = prev
     end

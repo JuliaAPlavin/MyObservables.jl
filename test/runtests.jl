@@ -215,6 +215,34 @@ end
     @test log_skip == [:positive, :negative]  # effect runs
 end
 
+@testitem "error recovery in computed" begin
+    using MyObservables
+
+    rt = Runtime()
+    s = signal(rt, 1)
+    fail = Ref(true)
+
+    c = computed(rt) do
+        fail[] && error("boom")
+        s[] * 2
+    end
+
+    # First read throws because fail[] is true
+    @test_throws ErrorException c[]
+
+    # Node should recover — not be stuck in COMPUTING
+    fail[] = false
+    @test c[] == 2
+
+    # Subsequent updates still work
+    s[] = 5
+    log = Int[]
+    e = effect!(rt) do
+        push!(log, c[])
+    end
+    @test log == [10]
+end
+
 @testitem "cycle detection" begin
     using MyObservables
 
