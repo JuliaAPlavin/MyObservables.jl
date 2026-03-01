@@ -279,7 +279,7 @@ end
     end
 end
 
-@testitem "Observable bridge" begin
+@testitem "Observable bridge (to_obs)" begin
     using MyObservables
     using Observables
 
@@ -299,6 +299,49 @@ end
     dispose_bridge!(rt, obs)
     x[] = 0.0
     @test obs[] ≈ 1.0  # no longer updated
+end
+
+@testitem "Observable bridge (from_obs)" begin
+    using MyObservables
+    using MyObservables: @lift
+    using Observables
+
+    rt = Runtime()
+
+    # Basic: Observable drives a Signal
+    obs = Observable(10)
+    s = from_obs(obs, rt)
+    @test s isa Signal{Int}
+    @test s[] == 10
+
+    obs[] = 42
+    @test s[] == 42
+
+    # Downstream computed and effects see changes
+    c = computed(rt) do
+        s[] * 2
+    end
+    log = Int[]
+    e = effect!(rt) do
+        push!(log, c[])
+    end
+    @test log == [84]
+
+    obs[] = 5
+    @test c[] == 10
+    @test log == [84, 10]
+
+    # Works with @lift
+    doubled = @lift $s * 3
+    @test doubled[] == 15
+    obs[] = 7
+    @test doubled[] == 21
+
+    # dispose_bridge! stops updates
+    dispose_bridge!(rt, obs)
+    obs[] = 999
+    @test s[] == 7  # no longer updated
+    @test doubled[] == 21
 end
 
 @testitem "@lift macro" begin
