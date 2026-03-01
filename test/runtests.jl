@@ -288,13 +288,12 @@ end
 
 @testitem "@lift macro" begin
     using MyObservables
-    using MyObservables: @lift
+    using MyObservables: Observable, @lift, _GLOBAL_RT
 
-    rt = Runtime()
-    a = signal(rt, 1)
-    b = signal(rt, 2)
+    a = Observable(1)
+    b = Observable(2)
 
-    c = @lift($a + $b)
+    c = @lift $a + $b
     @test c isa MyObservables.Computed
     @test c[] == 3
 
@@ -305,29 +304,29 @@ end
     @test c[] == 15
 
     # complex expression
-    x = signal(rt, 3.0)
-    y = signal(rt, 4.0)
-    hyp = @lift(sqrt($x^2 + $y^2))
+    x = Observable(3.0)
+    y = Observable(4.0)
+    hyp = @lift sqrt($x^2 + $y^2)
     @test hyp[] == 5.0
     x[] = 5.0
     y[] = 12.0
     @test hyp[] == 13.0
 
     # computed inputs
-    doubled = computed(rt) do; x[] * 2; end
-    z = @lift($doubled + $y)
+    doubled = @lift $x * 2
+    z = @lift $doubled + $y
     @test z[] == 22.0
 
     # nested property access
-    nt = (sig = signal(rt, [1, 2, 3]),)
-    len = @lift(length($(nt.sig)) + 1)
+    nt = (sig = Observable([1, 2, 3]),)
+    len = @lift length($(nt.sig)) + 1
     @test len[] == 4
     nt.sig[] = [1, 2]
     @test len[] == 3
 
     # with effects
     log = Int[]
-    e = effect!(rt) do
+    e = effect!(_GLOBAL_RT[]) do
         push!(log, c[])
     end
     @test log == [15]

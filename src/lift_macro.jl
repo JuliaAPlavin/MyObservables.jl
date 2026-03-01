@@ -1,3 +1,8 @@
+const _GLOBAL_RT = Ref(Runtime())
+
+Observable(val) = signal(_GLOBAL_RT[], val)
+
+
 find_dollar_nodes(x) = Set{Any}()
 function find_dollar_nodes(e::Expr)
     if e.head == :$ && length(e.args) == 1
