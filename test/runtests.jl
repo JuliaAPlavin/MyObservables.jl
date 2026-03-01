@@ -369,30 +369,25 @@ end
 
 @testitem "CairoMakie changing data length" begin
     using MyObservables
+    using MyObservables: @lift
     using CairoMakie
     using CairoMakie.Makie: Point2f
 
     rt = Runtime()
     data = signal(rt, [(0.0, 0.0), (1.0, 1.0)])
 
-    xs = computed(rt) do
-        first.(data[])
-    end
-    ys = computed(rt) do
-        last.(data[])
-    end
-
-    obs_xs = to_obs(xs)
-    obs_ys = to_obs(ys)
+    xs = @lift first.($data)
+    ys = @lift last.($data)
+    colors = @lift last.($data)
 
     fig = Figure()
     ax = Axis(fig[1, 1]; limits=(-1, 4, -2, 2))
-    p = scatter!(ax, obs_xs, obs_ys; markersize=20)
+    p = scatter!(ax, xs, ys; color=colors, markersize=20)
 
     buf1 = copy(colorbuffer(fig))
     @test p[1][] == Point2f[(0, 0), (1, 1)]
 
-    # Add more points
+    # Add more points — all inputs update atomically via pull-based integration
     data[] = [(0.0, 0.0), (1.0, 1.0), (2.0, -1.0), (3.0, 1.5)]
     buf2 = copy(colorbuffer(fig))
 
