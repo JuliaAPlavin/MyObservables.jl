@@ -4,7 +4,7 @@ using MyObservables: @lift
 
 fig = Figure()
 ax = Axis(fig[1, 1])
-phase = Slider(fig[2, 1], range=0:0.1:2π).value |> from_obs
+phase = Slider(fig[2, 1], range=0:0.1:2π).value
 
 xs = LinRange(0, 4π, 200)
 curve_a = @lift sin.(xs .+ $phase)

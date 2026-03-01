@@ -59,8 +59,8 @@ lines!(ax, xs, ys)
 ```julia
 fig = Figure()
 ax = Axis(fig[1, 1])
-amp = Slider(fig[2, 1], range=0.1:0.1:3.0).value |> from_obs
-freq = Slider(fig[3, 1], range=0.1:0.1:5.0).value |> from_obs
+amp = Slider(fig[2, 1], range=0.1:0.1:3.0).value
+freq = Slider(fig[3, 1], range=0.1:0.1:5.0).value
 
 xs = LinRange(0, 4π, 200)
 ys = @lift $amp .* sin.($freq .* xs)
@@ -120,7 +120,7 @@ lines!(ax, xs, combined)
 ```julia
 fig = Figure()
 ax = Axis(fig[1, 1])
-phase = Slider(fig[2, 1], range=0:0.1:2π).value |> from_obs
+phase = Slider(fig[2, 1], range=0:0.1:2π).value
 
 xs = LinRange(0, 4π, 200)
 curve_a = @lift sin.(xs .+ $phase)
@@ -190,8 +190,8 @@ lines!(ax, xs, ys)
 ```julia
 fig = Figure()
 ax = Axis(fig[1, 1])
-active = Toggle(fig[2, 1], active=false).active |> from_obs
-freq = Slider(fig[3, 1], range=0.1:0.1:5.0).value |> from_obs
+active = Toggle(fig[2, 1], active=false).active
+freq = Slider(fig[3, 1], range=0.1:0.1:5.0).value
 
 xs = LinRange(0, 4π, 200)
 calc_count = Ref(0)
@@ -257,7 +257,7 @@ scatter!(ax, xs, ys, color=colors)
 ```julia
 fig = Figure()
 ax = Axis(fig[1, 1])
-n = Slider(fig[2, 1], range=10:500).value |> from_obs
+n = Slider(fig[2, 1], range=10:500).value
 
 xs = @lift LinRange(0, 10, $n)
 ys = @lift sin.(LinRange(0, 10, $n))
