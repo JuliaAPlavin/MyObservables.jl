@@ -15,9 +15,9 @@ mutable struct Runtime
     current::Union{Nothing,AbstractNode}
     pending_effects::Vector{AbstractNode}
     batch_depth::Int
-    to_bridges::Dict{UInt64,Any}          # objectid(Observable) → EffectNode
+    to_bridges::WeakKeyDict{Any,Any}      # Observable → EffectNode
     from_bridges::WeakKeyDict{Any,Any}    # Observable → ObserverFunction
-    Runtime() = new(nothing, AbstractNode[], 0, Dict{UInt64,Any}(), WeakKeyDict{Any,Any}())
+    Runtime() = new(nothing, AbstractNode[], 0, WeakKeyDict{Any,Any}(), WeakKeyDict{Any,Any}())
 end
 
 # ── Signal ──────────────────────────────────────────────────────────

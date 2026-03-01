@@ -8,10 +8,13 @@ import Observables: Observable, on, off
 function MyObservables.to_obs(node::Union{Signal{T},Computed{T}}) where {T}
     rt = node.runtime
     obs = Observable{T}(node[])
+    obs_weak = WeakRef(obs)
     e = effect!(rt) do
-        obs[] = node[]
+        o = obs_weak.value
+        o === nothing && return
+        o[] = node[]
     end
-    rt.to_bridges[objectid(obs)] = e
+    rt.to_bridges[obs] = e
     return obs
 end
 
@@ -29,10 +32,9 @@ end
 
 # ── dispose_bridge!: cleanup for both directions ─────────────────────
 function MyObservables.dispose_bridge!(rt::Runtime, obs::Observable)
-    id = objectid(obs)
-    if haskey(rt.to_bridges, id)
-        e = rt.to_bridges[id]::EffectNode
-        delete!(rt.to_bridges, id)
+    if haskey(rt.to_bridges, obs)
+        e = rt.to_bridges[obs]::EffectNode
+        delete!(rt.to_bridges, obs)
         dispose!(e)
     end
     if haskey(rt.from_bridges, obs)
