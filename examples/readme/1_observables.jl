@@ -8,3 +8,5 @@ freq = Slider(fig[3, 1], range=0.1:0.1:5.0).value
 xs = LinRange(0, 4π, 200)
 ys = @lift $amp .* sin.($freq .* xs)
 lines!(ax, xs, ys)
+
+display(fig)

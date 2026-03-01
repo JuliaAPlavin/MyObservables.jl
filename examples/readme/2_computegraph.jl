@@ -1,5 +1,5 @@
 using GLMakie
-using Makie.ComputePipeline: ComputeGraph, add_input!, register_computation!
+using GLMakie.ComputePipeline: ComputeGraph, add_input!, register_computation!
 
 fig = Figure()
 ax = Axis(fig[1, 1])
@@ -25,3 +25,5 @@ register_computation!(graph, [:curve_a, :curve_b, :curve_c], [:combined]) do inp
 end
 lines!(ax, xs, graph[:combined])
 # Moving phase slider: calc_count increases by 1 per update
+
+display(fig)

@@ -1,8 +1,25 @@
 # MyObservables.jl
 
-A pull-based reactive system for Julia with automatic dynamic dependency tracking. Integrates with [Makie](https://docs.makie.org/) for interactive visualizations.
+A pull-based reactive system for Julia with automatic dynamic dependency tracking. Integrates with `Observables.jl` and with `Makie.jl` natively.
 
-**Why not just Observables.jl?** Observables.jl is push-based: every change eagerly propagates to all downstream nodes, even through diamond-shaped graphs (causing redundant work) and along branches that aren't currently needed. MyObservables is pull-based with dynamic dependency tracking — diamonds resolve once, and unused branches are never computed.
+**Why not just Observables.jl?** Observables.jl is push-based: every change eagerly propagates to all downstream nodes, even through diamond-shaped graphs and unneeded branches, causing redundant work and inconsistent states.
+
+**Why not ComputeGraph.jl?** Makie's `ComputeGraph` is pull-based and avoids diamond glitches, but requires verbose explicit graph manipulation and still can't always skip unused computations.
+
+**`MyObservables.jl`** combines pull-based evaluation with automatic dynamic dependency tracking — diamonds resolve once, unused branches are never computed, and the syntax stays as simple as `@lift`.
+
+
+### Comparison at Glance
+
+
+|                            | `Observables.jl`          | `MyObservables.jl`          | `ComputeGraph.jl`           |
+|----------------------------|-------------------------|--------------------------|--------------------------|
+| **Evaluation model**       | Eager            | Lazy              | Lazy              |
+| **Dependency declaration** | Implicit (push wiring)  | Automatic (tracked reads) | Explicit (symbol lists)  |
+| **Diamond (N fan-in)**     | N redundant updates ❌    | 1 update ✅                | 1 update ✅                |
+| **Diamond consistency**    | Glitchy intermediate states ❌ | Always consistent ✅    | Always consistent ✅       |
+| **Conditional deps**       | Always recompute ❌       | Skip unused branches ✅    | Always recompute ❌        |
+| **Simple `@lift` syntax**         | Yes ✅                    | Yes ✅         | No ❌                      |
 
 ## Examples
 
@@ -14,7 +31,7 @@ using GLMakie
 
 # ComputeGraph — Makie's internal compute pipeline
 using GLMakie
-using Makie.ComputePipeline: ComputeGraph, add_input!, register_computation!
+using GLMakie.ComputePipeline: ComputeGraph, add_input!, register_computation!
 
 # MyObservables
 using GLMakie
@@ -28,9 +45,9 @@ Two sliders control amplitude and frequency of a sine curve. All three approache
 
 <table>
 <tr>
-<th>Observables.jl</th>
-<th>MyObservables</th>
-<th>ComputeGraph</th>
+<th>Observables.jl ✅</th>
+<th>MyObservables.jl ✅</th>
+<th>ComputeGraph.jl ✅</th>
 </tr>
 <tr>
 <td>
@@ -97,9 +114,9 @@ One slider feeds three intermediate computations that merge into a single expens
 
 <table>
 <tr>
-<th>Observables.jl</th>
-<th>MyObservables</th>
-<th>ComputeGraph</th>
+<th>Observables.jl ❌</th>
+<th>MyObservables.jl ✅</th>
+<th>ComputeGraph.jl ✅</th>
 </tr>
 <tr>
 <td>
@@ -185,9 +202,9 @@ A toggle controls whether an expensive analysis runs. When the toggle is OFF, on
 
 <table>
 <tr>
-<th>Observables.jl</th>
-<th>MyObservables</th>
-<th>ComputeGraph</th>
+<th>Observables.jl ❌</th>
+<th>MyObservables.jl ✅</th>
+<th>ComputeGraph.jl ❌</th>
 </tr>
 <tr>
 <td>
@@ -259,13 +276,77 @@ lines!(ax, xs, graph[:ys])
 </tr>
 </table>
 
-## Summary
+### 4. Variable-Length Diamond
 
-|                            | Observables.jl          | ComputeGraph             | MyObservables            |
-|----------------------------|-------------------------|--------------------------|--------------------------|
-| **Evaluation model**       | Push (eager)            | Pull (lazy)              | Pull (lazy)              |
-| **Diamond (N fan-in)**     | N redundant updates     | 1 update                 | 1 update                 |
-| **Conditional deps**       | Always recompute        | Always recompute         | Skip unused branches     |
-| **Dependency declaration** | Implicit (push wiring)  | Explicit (symbol lists)  | Automatic (tracked reads)|
-| **`@lift` syntax**         | Yes                     | No                       | Yes (compatible)         |
-| **Makie integration**      | Native                  | Native (internal)        | Via extension            |
+A slider controls the number of scatter points. Coordinates and colors are computed independently from the same `n`, and a derived quantity combines them — a diamond where array lengths must match. With Observables.jl, the first branch updates before the second, causing a **DimensionMismatch crash**. ComputeGraph and MyObservables resolve all branches before the merge, so lengths are always consistent.
+
+```
+       n
+      / \
+    xs   ys
+      \ /
+    colors = xs .+ ys  ← crashes if lengths differ
+```
+
+<table>
+<tr>
+<th>Observables.jl ❌</th>
+<th>MyObservables.jl ✅</th>
+<th>ComputeGraph.jl ✅</th>
+</tr>
+<tr>
+<td>
+
+```julia
+fig = Figure()
+ax = Axis(fig[1, 1])
+n = Slider(fig[2, 1], range=10:500).value
+
+xs = @lift LinRange(0, 10, $n)
+ys = @lift sin.(LinRange(0, 10, $n))
+colors = @lift $xs .+ $ys
+scatter!(ax, xs, ys, color=colors)
+# DimensionMismatch on slider move ✗
+```
+
+</td>
+<td>
+
+```julia
+fig = Figure()
+ax = Axis(fig[1, 1])
+n = Slider(fig[2, 1], range=10:500).value |> from_obs
+
+xs = @lift LinRange(0, 10, $n)
+ys = @lift sin.(LinRange(0, 10, $n))
+colors = @lift $xs .+ $ys
+scatter!(ax, xs, ys, color=colors)
+# works correctly ✓
+```
+
+</td>
+<td>
+
+```julia
+fig = Figure()
+ax = Axis(fig[1, 1])
+n = Slider(fig[2, 1], range=10:500).value
+
+graph = ComputeGraph()
+add_input!(graph, :n, n)
+register_computation!(graph, [:n], [:xs]) do inputs, changed, cached
+    (LinRange(0, 10, inputs.n),)
+end
+register_computation!(graph, [:n], [:ys]) do inputs, changed, cached
+    (sin.(LinRange(0, 10, inputs.n)),)
+end
+register_computation!(graph, [:xs, :ys], [:colors]) do inputs, changed, cached
+    (inputs.xs .+ inputs.ys,)
+end
+scatter!(ax, graph[:xs], graph[:ys], color=graph[:colors])
+# works correctly ✓
+```
+
+</td>
+</tr>
+</table>

@@ -16,3 +16,5 @@ end
 ys = @lift $active ? $analysis : sin.(xs)
 lines!(ax, xs, ys)
 # Toggle OFF, move freq 100 times → calc_count = 0!
+
+display(fig)

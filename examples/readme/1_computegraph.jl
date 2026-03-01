@@ -1,5 +1,5 @@
 using GLMakie
-using Makie.ComputePipeline: ComputeGraph, add_input!, register_computation!
+using GLMakie.ComputePipeline: ComputeGraph, add_input!, register_computation!
 
 fig = Figure()
 ax = Axis(fig[1, 1])
@@ -14,3 +14,5 @@ register_computation!(graph, [:amp, :freq], [:ys]) do inputs, changed, cached
     (inputs.amp .* sin.(inputs.freq .* xs),)
 end
 lines!(ax, xs, graph[:ys])
+
+display(fig)

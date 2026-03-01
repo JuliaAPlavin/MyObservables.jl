@@ -18,3 +18,5 @@ combined = @lift begin
 end
 lines!(ax, xs, combined)
 # Moving phase slider: calc_count increases by 1 per update
+
+display(fig)

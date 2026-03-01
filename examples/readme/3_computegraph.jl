@@ -1,5 +1,5 @@
 using GLMakie
-using Makie.ComputePipeline: ComputeGraph, add_input!, register_computation!
+using GLMakie.ComputePipeline: ComputeGraph, add_input!, register_computation!
 
 fig = Figure()
 ax = Axis(fig[1, 1])
@@ -21,3 +21,5 @@ register_computation!(graph, [:active, :analysis], [:ys]) do inputs, changed, ca
 end
 lines!(ax, xs, graph[:ys])
 # Toggle OFF, move freq 100 times → calc_count = 100
+
+display(fig)
