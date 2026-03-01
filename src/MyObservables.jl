@@ -2,6 +2,7 @@ module MyObservables
 
 export Runtime, Signal, Computed, EffectNode
 export signal, computed, effect!, dispose!, batch, to_observable, dispose_bridge!
+export runtime
 
 # ── Node state ──────────────────────────────────────────────────────
 @enum NodeState::UInt8 CLEAN=0 DIRTY=1 COMPUTING=2
@@ -27,6 +28,15 @@ mutable struct Signal{T} <: AbstractNode
 end
 
 signal(rt::Runtime, value::T) where {T} = Signal{T}(rt, value, UInt64(1), Set{AbstractNode}())
+
+# ── Runtime extraction ────────────────────────────────────────────
+function runtime(node::AbstractNode, nodes::AbstractNode...)
+    rt = node.runtime
+    for n in nodes
+        n.runtime === rt || error("Nodes belong to different runtimes")
+    end
+    return rt
+end
 
 # ── Computed ────────────────────────────────────────────────────────
 mutable struct Computed{T} <: AbstractNode
