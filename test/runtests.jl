@@ -370,6 +370,14 @@ end
     obs[] = 999
     @test s[] == 7  # no longer updated
     @test doubled[] == 21
+
+    # Convenience: from_obs without explicit runtime (uses global RT)
+    obs2 = Observables.Observable("hello")
+    s2 = from_obs(obs2)
+    @test s2 isa Signal{String}
+    @test s2[] == "hello"
+    obs2[] = "world"
+    @test s2[] == "world"
 end
 
 @testitem "@lift macro" begin
