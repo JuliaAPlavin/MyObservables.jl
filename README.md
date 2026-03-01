@@ -43,15 +43,7 @@ using MyObservables: @lift
 
 Two sliders control amplitude and frequency of a sine curve. All three approaches produce identical results. Observables and MyObservables share the same `@lift` syntax; ComputeGraph requires explicit graph construction.
 
-<table>
-<tr>
-<th>Observables.jl ✅</th>
-<th>MyObservables.jl ✅</th>
-<th>ComputeGraph.jl ✅</th>
-</tr>
-<tr>
-<td>
-
+**Observables.jl** ✅
 ```julia
 fig = Figure()
 ax = Axis(fig[1, 1])
@@ -63,9 +55,7 @@ ys = @lift $amp .* sin.($freq .* xs)
 lines!(ax, xs, ys)
 ```
 
-</td>
-<td>
-
+**MyObservables.jl** ✅
 ```julia
 fig = Figure()
 ax = Axis(fig[1, 1])
@@ -77,9 +67,7 @@ ys = @lift $amp .* sin.($freq .* xs)
 lines!(ax, xs, ys)
 ```
 
-</td>
-<td>
-
+**ComputeGraph.jl** ✅
 ```julia
 fig = Figure()
 ax = Axis(fig[1, 1])
@@ -96,10 +84,6 @@ end
 lines!(ax, xs, graph[:ys])
 ```
 
-</td>
-</tr>
-</table>
-
 ### 2. Diamond Dependency
 
 One slider feeds three intermediate computations that merge into a single expensive result. With Observables.jl, each branch independently pushes into `combined`, causing it to recompute **3 times per slider move**. ComputeGraph and MyObservables resolve the diamond in a single computation.
@@ -112,15 +96,7 @@ One slider feeds three intermediate computations that merge into a single expens
        combined  ← expensive, tracked by calc_count
 ```
 
-<table>
-<tr>
-<th>Observables.jl ❌</th>
-<th>MyObservables.jl ✅</th>
-<th>ComputeGraph.jl ✅</th>
-</tr>
-<tr>
-<td>
-
+**Observables.jl** ❌
 ```julia
 fig = Figure()
 ax = Axis(fig[1, 1])
@@ -140,9 +116,7 @@ lines!(ax, xs, combined)
 # calc_count increases by 3 per update ✗
 ```
 
-</td>
-<td>
-
+**MyObservables.jl** ✅
 ```julia
 fig = Figure()
 ax = Axis(fig[1, 1])
@@ -162,9 +136,7 @@ lines!(ax, xs, combined)
 # calc_count increases by 1 per update ✓
 ```
 
-</td>
-<td>
-
+**ComputeGraph.jl** ✅
 ```julia
 fig = Figure()
 ax = Axis(fig[1, 1])
@@ -192,23 +164,11 @@ lines!(ax, xs, graph[:combined])
 # calc_count increases by 1 per update ✓
 ```
 
-</td>
-</tr>
-</table>
-
 ### 3. Conditional Dependencies
 
 A toggle controls whether an expensive analysis runs. When the toggle is OFF, only a cheap default is shown. With Observables.jl and ComputeGraph, `analysis` recomputes whenever `freq` changes — both treat `freq` as a static dependency regardless of toggle state. With MyObservables, dependencies are tracked dynamically: when the toggle is OFF, `analysis` is never read, so it unsubscribes from `freq` entirely.
 
-<table>
-<tr>
-<th>Observables.jl ❌</th>
-<th>MyObservables.jl ✅</th>
-<th>ComputeGraph.jl ❌</th>
-</tr>
-<tr>
-<td>
-
+**Observables.jl** ❌
 ```julia
 fig = Figure()
 ax = Axis(fig[1, 1])
@@ -223,12 +183,10 @@ analysis = @lift begin
 end
 ys = @lift $active ? $analysis : sin.(xs)
 lines!(ax, xs, ys)
-# toggle OFF, mass freq 100× → calc_count = 100 ✗
+# toggle OFF, move freq 100× → calc_count = 100 ✗
 ```
 
-</td>
-<td>
-
+**MyObservables.jl** ✅
 ```julia
 fig = Figure()
 ax = Axis(fig[1, 1])
@@ -246,9 +204,7 @@ lines!(ax, xs, ys)
 # toggle OFF, move freq 100× → calc_count = 0 ✓
 ```
 
-</td>
-<td>
-
+**ComputeGraph.jl** ❌
 ```julia
 fig = Figure()
 ax = Axis(fig[1, 1])
@@ -272,10 +228,6 @@ lines!(ax, xs, graph[:ys])
 # toggle OFF, move freq 100× → calc_count = 100 ✗
 ```
 
-</td>
-</tr>
-</table>
-
 ### 4. Variable-Length Diamond
 
 A slider controls the number of scatter points. Coordinates and colors are computed independently from the same `n`, and a derived quantity combines them — a diamond where array lengths must match. With Observables.jl, the first branch updates before the second, causing a **DimensionMismatch crash**. ComputeGraph and MyObservables resolve all branches before the merge, so lengths are always consistent.
@@ -288,15 +240,7 @@ A slider controls the number of scatter points. Coordinates and colors are compu
     colors = xs .+ ys  ← crashes if lengths differ
 ```
 
-<table>
-<tr>
-<th>Observables.jl ❌</th>
-<th>MyObservables.jl ✅</th>
-<th>ComputeGraph.jl ✅</th>
-</tr>
-<tr>
-<td>
-
+**Observables.jl** ❌
 ```julia
 fig = Figure()
 ax = Axis(fig[1, 1])
@@ -309,9 +253,7 @@ scatter!(ax, xs, ys, color=colors)
 # DimensionMismatch on slider move ✗
 ```
 
-</td>
-<td>
-
+**MyObservables.jl** ✅
 ```julia
 fig = Figure()
 ax = Axis(fig[1, 1])
@@ -324,9 +266,7 @@ scatter!(ax, xs, ys, color=colors)
 # works correctly ✓
 ```
 
-</td>
-<td>
-
+**ComputeGraph.jl** ✅
 ```julia
 fig = Figure()
 ax = Axis(fig[1, 1])
@@ -346,7 +286,3 @@ end
 scatter!(ax, graph[:xs], graph[:ys], color=graph[:colors])
 # works correctly ✓
 ```
-
-</td>
-</tr>
-</table>
