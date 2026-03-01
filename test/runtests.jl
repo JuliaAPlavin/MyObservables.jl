@@ -215,6 +215,49 @@ end
     @test log_skip == [:positive, :negative]  # effect runs
 end
 
+@testitem "lazy pull skips unused stale deps" begin
+    using MyObservables
+
+    rt = Runtime()
+    s = signal(rt, 1)
+    toggle = signal(rt, true)
+
+    a_count = Ref(0)
+    expensive_a = computed(rt) do
+        a_count[] += 1
+        s[] * 1000
+    end
+
+    b_count = Ref(0)
+    expensive_b = computed(rt) do
+        b_count[] += 1
+        s[] * 2000
+    end
+
+    selector = computed(rt) do
+        toggle[] ? expensive_a[] : expensive_b[]
+    end
+
+    log = Int[]
+    e = effect!(rt) do
+        push!(log, selector[])
+    end
+
+    @test log == [1000]
+    @test a_count[] == 1
+    @test b_count[] == 0
+
+    a_count[] = 0
+    # Switch branch AND change data: expensive_a should NOT be recomputed
+    batch(rt) do
+        toggle[] = false
+        s[] = 2
+    end
+    @test log == [1000, 4000]
+    @test a_count[] == 0  # no longer needed — lazy pull skipped it
+    @test b_count[] == 1
+end
+
 @testitem "error recovery in computed" begin
     using MyObservables
 

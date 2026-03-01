@@ -114,14 +114,20 @@ function update!(c::Computed)
     c.state = COMPUTING
     rt = c.runtime
 
-    # Pull all current deps to clean state
-    for dep in c.deps
-        dep isa Computed && dep.state == DIRTY && update!(dep)
-    end
-
-    # Version check: skip recompute if no dep actually changed
+    # Lazy pull + version check: pull deps one at a time, stop on first change.
+    # Remaining dirty deps are pulled lazily by getindex during recompute,
+    # avoiding unnecessary updates of deps that dynamic re-tracking may drop.
     if isdefined(c, :value) && length(c.deps) == length(c.dep_versions)
-        if !any(i -> node_version(c.deps[i]) != c.dep_versions[i], eachindex(c.deps))
+        needs_recompute = false
+        for i in eachindex(c.deps)
+            dep = c.deps[i]
+            dep isa Computed && dep.state == DIRTY && update!(dep)
+            if node_version(dep) != c.dep_versions[i]
+                needs_recompute = true
+                break
+            end
+        end
+        if !needs_recompute
             c.state = CLEAN
             return nothing
         end
@@ -163,14 +169,18 @@ function run_effect!(e::EffectNode)
     e.disposed && return
     rt = e.runtime
 
-    # Pull all current deps to clean state
-    for dep in e.deps
-        dep isa Computed && dep.state == DIRTY && update!(dep)
-    end
-
-    # Version check: skip if no dep actually changed (not on first run)
+    # Lazy pull + version check: pull deps one at a time, stop on first change.
     if !isempty(e.dep_versions) && length(e.deps) == length(e.dep_versions)
-        if !any(i -> node_version(e.deps[i]) != e.dep_versions[i], eachindex(e.deps))
+        needs_rerun = false
+        for i in eachindex(e.deps)
+            dep = e.deps[i]
+            dep isa Computed && dep.state == DIRTY && update!(dep)
+            if node_version(dep) != e.dep_versions[i]
+                needs_rerun = true
+                break
+            end
+        end
+        if !needs_rerun
             e.state = CLEAN
             return
         end
