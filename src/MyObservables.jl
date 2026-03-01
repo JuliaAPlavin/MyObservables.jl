@@ -47,21 +47,22 @@ mutable struct Computed{T} <: AbstractNode
     deps::Vector{AbstractNode}
     dep_versions::Vector{UInt64}
     const users::Set{AbstractNode}
+    const skip_equal::Bool
     value::T
 
-    function Computed{T}(runtime::Runtime, f) where {T}
-        new{T}(runtime, f, UInt64(0), DIRTY, AbstractNode[], UInt64[], Set{AbstractNode}())
+    function Computed{T}(runtime::Runtime, f; skip_equal::Bool=false) where {T}
+        new{T}(runtime, f, UInt64(0), DIRTY, AbstractNode[], UInt64[], Set{AbstractNode}(), skip_equal)
         # value left #undef
     end
 end
 
-function computed(f, rt::Runtime, ::Type{T}) where {T}
-    Computed{T}(rt, f)
+function computed(f, rt::Runtime, ::Type{T}; skip_equal::Bool=false) where {T}
+    Computed{T}(rt, f; skip_equal)
 end
 
-function computed(f, rt::Runtime)
+function computed(f, rt::Runtime; skip_equal::Bool=false)
     T = Core.Compiler.return_type(f, Tuple{})
-    Computed{T}(rt, f)
+    Computed{T}(rt, f; skip_equal)
 end
 
 # ── Effect ──────────────────────────────────────────────────────────
@@ -143,7 +144,7 @@ function update!(c::Computed)
     c.dep_versions = map(node_version, c.deps)
 
     had_value = isdefined(c, :value)
-    changed = !had_value || !isequal(c.value, new_value)
+    changed = !had_value || !c.skip_equal || !isequal(c.value, new_value)
     c.value = new_value
     c.state = CLEAN
     changed && (c.version += 1)

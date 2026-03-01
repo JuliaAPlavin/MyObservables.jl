@@ -186,18 +186,33 @@ end
 
     rt = Runtime()
     s = signal(rt, 1)
-    c = computed(rt) do
+
+    # Default: always propagate even when value unchanged
+    c_default = computed(rt) do
         s[] > 0 ? :positive : :negative
     end
-
-    log = Symbol[]
-    e = effect!(rt) do
-        push!(log, c[])
+    log_default = Symbol[]
+    e1 = effect!(rt) do
+        push!(log_default, c_default[])
     end
+    @test log_default == [:positive]
+    s[] = 2  # c still returns :positive
+    @test log_default == [:positive, :positive]  # effect re-runs (always propagate)
 
-    @test log == [:positive]
-    s[] = 2  # c still returns :positive — value unchanged
-    @test log == [:positive]  # effect should not re-run
+    # Opt-in: skip_equal suppresses when value unchanged
+    s[] = 3
+    c_skip = computed(rt; skip_equal=true) do
+        s[] > 0 ? :positive : :negative
+    end
+    log_skip = Symbol[]
+    e2 = effect!(rt) do
+        push!(log_skip, c_skip[])
+    end
+    @test log_skip == [:positive]
+    s[] = 4  # c_skip still returns :positive
+    @test log_skip == [:positive]  # effect suppressed
+    s[] = -1  # c_skip now returns :negative — value changed
+    @test log_skip == [:positive, :negative]  # effect runs
 end
 
 @testitem "cycle detection" begin
