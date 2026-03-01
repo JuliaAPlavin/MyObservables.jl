@@ -22,10 +22,11 @@ end
 mutable struct Signal{T} <: AbstractNode
     const runtime::Runtime
     value::T
+    version::UInt64
     const users::Set{AbstractNode}
 end
 
-signal(rt::Runtime, value::T) where {T} = Signal{T}(rt, value, Set{AbstractNode}())
+signal(rt::Runtime, value::T) where {T} = Signal{T}(rt, value, UInt64(1), Set{AbstractNode}())
 
 # ── Computed ────────────────────────────────────────────────────────
 mutable struct Computed{T} <: AbstractNode
@@ -34,11 +35,12 @@ mutable struct Computed{T} <: AbstractNode
     version::UInt64
     state::NodeState
     deps::Vector{AbstractNode}
+    dep_versions::Vector{UInt64}
     const users::Set{AbstractNode}
     value::T
 
     function Computed{T}(runtime::Runtime, f) where {T}
-        new{T}(runtime, f, UInt64(0), DIRTY, AbstractNode[], Set{AbstractNode}())
+        new{T}(runtime, f, UInt64(0), DIRTY, AbstractNode[], UInt64[], Set{AbstractNode}())
         # value left #undef
     end
 end
@@ -48,7 +50,7 @@ function computed(f, rt::Runtime, ::Type{T}) where {T}
 end
 
 function computed(f, rt::Runtime)
-    T = Base.promote_op(f)
+    T = Core.Compiler.return_type(f, Tuple{})
     Computed{T}(rt, f)
 end
 
@@ -58,14 +60,19 @@ mutable struct EffectNode <: AbstractNode
     const f
     state::NodeState
     deps::Vector{AbstractNode}
+    dep_versions::Vector{UInt64}
     disposed::Bool
 end
 
 function effect!(f, rt::Runtime)
-    e = EffectNode(rt, f, DIRTY, AbstractNode[], false)
+    e = EffectNode(rt, f, DIRTY, AbstractNode[], UInt64[], false)
     run_effect!(e)
     return e
 end
+
+# ── Version helper ──────────────────────────────────────────────────
+node_version(s::Signal) = s.version
+node_version(c::Computed) = c.version
 
 # ── Dependency tracking ─────────────────────────────────────────────
 function track!(consumer::AbstractNode, provider::AbstractNode)
@@ -82,6 +89,7 @@ function Base.getindex(s::Signal{T})::T where {T}
 end
 
 function Base.getindex(c::Computed{T})::T where {T}
+    c.state == COMPUTING && error("Cycle detected: a Computed depends on itself")
     current = c.runtime.current
     current !== nothing && track!(current, c)
     c.state == DIRTY && update!(c)
@@ -93,6 +101,21 @@ function update!(c::Computed)
     c.state == COMPUTING && error("Cycle detected: a Computed depends on itself")
     c.state = COMPUTING
     rt = c.runtime
+
+    # Pull all current deps to clean state
+    for dep in c.deps
+        dep isa Computed && dep.state == DIRTY && update!(dep)
+    end
+
+    # Version check: skip recompute if no dep actually changed
+    if isdefined(c, :value) && length(c.deps) == length(c.dep_versions)
+        if !any(i -> node_version(c.deps[i]) != c.dep_versions[i], eachindex(c.deps))
+            c.state = CLEAN
+            return nothing
+        end
+    end
+
+    # Re-run with dependency tracking
     old_deps = c.deps
     c.deps = AbstractNode[]
 
@@ -107,6 +130,7 @@ function update!(c::Computed)
 
     cleanup_stale_deps!(c, old_deps)
     unique!(c.deps)
+    c.dep_versions = map(node_version, c.deps)
 
     had_value = isdefined(c, :value)
     changed = !had_value || !isequal(c.value, new_value)
@@ -120,6 +144,21 @@ end
 function run_effect!(e::EffectNode)
     e.disposed && return
     rt = e.runtime
+
+    # Pull all current deps to clean state
+    for dep in e.deps
+        dep isa Computed && dep.state == DIRTY && update!(dep)
+    end
+
+    # Version check: skip if no dep actually changed (not on first run)
+    if !isempty(e.dep_versions) && length(e.deps) == length(e.dep_versions)
+        if !any(i -> node_version(e.deps[i]) != e.dep_versions[i], eachindex(e.deps))
+            e.state = CLEAN
+            return
+        end
+    end
+
+    # Run with dependency tracking
     old_deps = e.deps
     e.deps = AbstractNode[]
 
@@ -134,6 +173,7 @@ function run_effect!(e::EffectNode)
 
     cleanup_stale_deps!(e, old_deps)
     unique!(e.deps)
+    e.dep_versions = map(node_version, e.deps)
 end
 
 # ── Stale edge cleanup ─────────────────────────────────────────────
@@ -154,6 +194,7 @@ function unsubscribe!(c::Computed)
         dep isa Computed && isempty(dep.users) && unsubscribe!(dep)
     end
     empty!(c.deps)
+    empty!(c.dep_versions)
     c.state = DIRTY
 end
 
@@ -178,6 +219,7 @@ end
 # ── setindex!: write + invalidate + flush ───────────────────────────
 function Base.setindex!(s::Signal{T}, value) where {T}
     s.value = convert(T, value)
+    s.version += 1
     propagate_dirty!(s)
     maybe_flush!(s.runtime)
     return value
@@ -217,6 +259,7 @@ function dispose!(e::EffectNode)
         dep isa Computed && isempty(dep.users) && unsubscribe!(dep)
     end
     empty!(e.deps)
+    empty!(e.dep_versions)
 end
 
 # ── Observable bridge stubs (overridden by ext/ObservablesExt.jl) ──

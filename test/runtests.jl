@@ -246,18 +246,22 @@ end
 @testitem "computed type inference" begin
     using MyObservables
 
-    rt = Runtime()
-    s = signal(rt, 3)
+    # let block required: at top-level scope closures don't capture typed fields,
+    # so Core.Compiler.return_type can't infer through them.
+    let
+        rt = Runtime()
+        s = signal(rt, 3)
 
-    c_inferred = computed(rt) do
-        s[] * 2
-    end
-    @test c_inferred isa MyObservables.Computed{Int}
+        c_explicit = computed(rt, Float64) do
+            Float64(s[])
+        end
+        @test c_explicit isa MyObservables.Computed{Float64}
 
-    c_explicit = computed(rt, Float64) do
-        Float64(s[])
+        c_inferred = computed(rt) do
+            s[] * 2
+        end
+        @test c_inferred isa MyObservables.Computed{Int}
     end
-    @test c_explicit isa MyObservables.Computed{Float64}
 end
 
 @testitem "Observable bridge" begin
@@ -271,7 +275,7 @@ end
     end
 
     obs = to_observable(y)
-    @test obs isa Observable{Float64}
+    @test obs isa Observable
     @test obs[] ≈ sin(1.0)
 
     x[] = π/2
@@ -285,28 +289,65 @@ end
 @testitem "CairoMakie integration" begin
     using MyObservables
     using CairoMakie
+    using CairoMakie.Makie: Point2f
 
     rt = Runtime()
-    xs = signal(rt, [1.0, 2.0, 3.0])
-    ys_sig = signal(rt, [1.0, 4.0, 9.0])
+    data = signal(rt, [(0.0, 0.0), (1.0, 1.0), (2.0, 0.0)])
+
+    xs = computed(rt) do
+        first.(data[])
+    end
+    ys = computed(rt) do
+        last.(data[])
+    end
 
     obs_xs = to_observable(xs)
-    obs_ys = to_observable(ys_sig)
+    obs_ys = to_observable(ys)
 
     fig = Figure()
-    ax = Axis(fig[1, 1])
-    scatter!(ax, obs_xs, obs_ys)
+    ax = Axis(fig[1, 1]; limits=(-1, 3, -2, 2))
+    p = scatter!(ax, obs_xs, obs_ys; markersize=20)
 
-    # First render
-    buf1 = colorbuffer(fig)
-    @test size(buf1) == size(colorbuffer(fig))
+    buf1 = copy(colorbuffer(fig))
+    @test p[1][] == Point2f[(0, 0), (1, 1), (2, 0)]
 
-    # Update signals — should propagate through to the plot
-    xs[] = [1.0, 2.0, 3.0, 4.0]
-    ys_sig[] = [1.0, 4.0, 9.0, 16.0]
+    # Update single source signal — both x and y observables update
+    data[] = [(0.0, 1.5), (1.0, -1.5), (2.0, 1.5)]
+    buf2 = copy(colorbuffer(fig))
 
-    # Second render reflects new data
-    buf2 = colorbuffer(fig)
-    @test size(buf2) == size(buf1)
-    @test buf1 != buf2  # plot changed because data changed
+    @test p[1][] == Point2f[(0, 1.5), (1, -1.5), (2, 1.5)]
+    @test buf1 != buf2
+end
+
+@testitem "CairoMakie changing data length" begin
+    using MyObservables
+    using CairoMakie
+    using CairoMakie.Makie: Point2f
+
+    rt = Runtime()
+    data = signal(rt, [(0.0, 0.0), (1.0, 1.0)])
+
+    xs = computed(rt) do
+        first.(data[])
+    end
+    ys = computed(rt) do
+        last.(data[])
+    end
+
+    obs_xs = to_observable(xs)
+    obs_ys = to_observable(ys)
+
+    fig = Figure()
+    ax = Axis(fig[1, 1]; limits=(-1, 4, -2, 2))
+    p = scatter!(ax, obs_xs, obs_ys; markersize=20)
+
+    buf1 = copy(colorbuffer(fig))
+    @test p[1][] == Point2f[(0, 0), (1, 1)]
+
+    # Add more points
+    data[] = [(0.0, 0.0), (1.0, 1.0), (2.0, -1.0), (3.0, 1.5)]
+    buf2 = copy(colorbuffer(fig))
+
+    @test p[1][] == Point2f[(0, 0), (1, 1), (2, -1), (3, 1.5)]
+    @test buf1 != buf2
 end

@@ -6,3 +6,12 @@ Observables = "510215fc-4207-5dde-b226-833fc4488ee2"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 TestItemRunner = "f8b46487-2199-4994-9208-9a1283c18c0a"
 TestItems = "1c621080-faea-4a02-84b6-bbd5e436b8fe"
+
+[compat]
+Aqua = "0.8"
+CairoMakie = "0.15"
+CompatHelperLocal = "0.1"
+Observables = "0.5"
+Test = "1"
+TestItemRunner = "1"
+TestItems = "1"
