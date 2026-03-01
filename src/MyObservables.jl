@@ -295,6 +295,8 @@ function to_obs end
 function from_obs end
 function dispose_bridge! end
 
+_ensure_node(node::AbstractNode) = node
+
 include("lift_macro.jl")
 
 end # module

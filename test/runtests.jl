@@ -593,6 +593,69 @@ end
     @test log == [15, 8]
 end
 
+@testitem "@lift with Observables.Observable" begin
+    using MyObservables
+    using MyObservables: @lift, _GLOBAL_RT
+    using Observables
+
+    # Basic: Observable directly in @lift
+    obs = Observables.Observable(10)
+    c = @lift $obs + 1
+    @test c isa MyObservables.Computed
+    @test c[] == 11
+    obs[] = 20
+    @test c[] == 21
+
+    # Dedup within single @lift: same observable used twice
+    obs2 = Observables.Observable(5)
+    c2 = @lift $obs2 + $obs2
+    @test c2[] == 10
+    obs2[] = 7
+    @test c2[] == 14
+
+    # Dedup across @lift calls: same observable yields same Signal
+    obs3 = Observables.Observable(1)
+    c3a = @lift $obs3 + 10
+    c3b = @lift $obs3 * 2
+    @test c3a[] == 11
+    @test c3b[] == 2
+    obs3[] = 5
+    @test c3a[] == 15
+    @test c3b[] == 10
+    # from_obs returns the same signal for the same observable
+    @test from_obs(obs3) === from_obs(obs3)
+    # single signal means effect fires once per observable update, not twice
+    obs5 = Observables.Observable(0)
+    c5a = @lift $obs5 + 1
+    c5b = @lift $obs5 * 10
+    log = Tuple{Int,Int}[]
+    e = effect!(_GLOBAL_RT[]) do
+        push!(log, (c5a[], c5b[]))
+    end
+    @test log == [(1, 0)]
+    obs5[] = 3
+    @test log == [(1, 0), (4, 30)]  # one consistent update, not two
+
+    # Mixed: Observable and AbstractNode
+    s = signal(_GLOBAL_RT[], 100)
+    obs4 = Observables.Observable(1)
+    c4 = @lift $s + $obs4
+    @test c4[] == 101
+    s[] = 200
+    @test c4[] == 201
+    obs4[] = 2
+    @test c4[] == 202
+
+    # Complex expression
+    obs_x = Observables.Observable(3.0)
+    obs_y = Observables.Observable(4.0)
+    hyp = @lift sqrt($obs_x^2 + $obs_y^2)
+    @test hyp[] == 5.0
+    obs_x[] = 5.0
+    obs_y[] = 12.0
+    @test hyp[] == 13.0
+end
+
 @testitem "CairoMakie integration" begin
     using MyObservables
     using CairoMakie

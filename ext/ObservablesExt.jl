@@ -22,11 +22,15 @@ end
 MyObservables.from_obs(obs::Observable) = MyObservables.from_obs(obs, MyObservables._GLOBAL_RT[])
 
 function MyObservables.from_obs(obs::Observable{T}, rt::Runtime) where {T}
+    if haskey(rt.from_bridges, obs)
+        (s, _) = rt.from_bridges[obs]
+        return s
+    end
     s = signal(rt, T, obs[])
     obsfunc = on(obs) do val
         s[] = val
     end
-    rt.from_bridges[obs] = obsfunc
+    rt.from_bridges[obs] = (s, obsfunc)
     return s
 end
 
@@ -38,11 +42,13 @@ function MyObservables.dispose_bridge!(rt::Runtime, obs::Observable)
         dispose!(e)
     end
     if haskey(rt.from_bridges, obs)
-        obsfunc = rt.from_bridges[obs]
+        (_, obsfunc) = rt.from_bridges[obs]
         delete!(rt.from_bridges, obs)
         off(obs, obsfunc)
     end
     return nothing
 end
+
+MyObservables._ensure_node(obs::Observable) = MyObservables.from_obs(obs)
 
 end # module
