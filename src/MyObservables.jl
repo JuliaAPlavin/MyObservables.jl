@@ -84,9 +84,6 @@ function effect!(f, rt::Runtime)
     return e
 end
 
-# ── Version helper ──────────────────────────────────────────────────
-node_version(s::Signal) = s.version
-node_version(c::Computed) = c.version
 
 value_changed(old, new, skip_equal::Bool) =
     old === new ? false :
@@ -100,7 +97,7 @@ function deps_changed!(node::AbstractNode)::Bool
         if dep isa Computed && dep.state == DIRTY
             update!(dep)
         end
-        node_version(dep) != dep_version && return true
+        dep.version != dep_version && return true
     end
     return false
 end
@@ -116,7 +113,7 @@ function execute_tracked!(f, node::AbstractNode)
         result = f()
         cleanup_stale_deps!(node, old_deps)
         unique!(node.deps)
-        node.dep_versions = map(node_version, node.deps)
+        node.dep_versions = map(d -> d.version, node.deps)
         return result
     catch
         new_partial = node.deps
