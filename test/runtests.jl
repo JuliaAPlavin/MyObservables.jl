@@ -314,6 +314,37 @@ end
     @test log == [10]
 end
 
+@testitem "error in dep during deps_changed! doesn't poison parent" begin
+    using MyObservables
+
+    rt = Runtime()
+    s = signal(rt, 1)
+    fail = Ref(false)
+
+    dep = computed(rt) do
+        fail[] && error("dep boom")
+        s[] * 10
+    end
+
+    c = computed(rt) do
+        dep[] + 1
+    end
+
+    # Establish both with valid values
+    @test c[] == 11
+
+    # Now make dep throw and dirty the graph
+    fail[] = true
+    s[] = 2  # dirties dep and c
+
+    # c[] → update!(c) → sets c.state=COMPUTING → deps_changed!(c) → update!(dep) → throws
+    @test_throws ErrorException c[]
+
+    # Fix dep — c should recover, not be stuck in COMPUTING
+    fail[] = false
+    @test c[] == 21
+end
+
 @testitem "effect error clears pending effects" begin
     using MyObservables
 

@@ -167,13 +167,13 @@ function update!(c::Computed)
     c.state == COMPUTING && error("Cycle detected: a Computed depends on itself")
     c.state = COMPUTING
 
-    if isdefined(c, :value) && !deps_changed!(c)
-        c.state = CLEAN
-        return nothing
-    end
-
     local new_value
     try
+        if isdefined(c, :value) && !deps_changed!(c)
+            c.state = CLEAN
+            return nothing
+        end
+
         new_value = execute_tracked!(c.f, c)
     catch
         c.state = DIRTY
