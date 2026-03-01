@@ -4,3 +4,9 @@ authors = ["Alexander Plavin <alexander@plav.in>"]
 version = "0.1.0"
 
 [deps]
+
+[weakdeps]
+Observables = "510215fc-4207-5dde-b226-833fc4488ee2"
+
+[extensions]
+ObservablesExt = "Observables"
