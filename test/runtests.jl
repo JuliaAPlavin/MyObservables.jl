@@ -215,6 +215,34 @@ end
     @test log_skip == [[1], [0]]  # effect runs
 end
 
+@testitem "signal skip_equal" begin
+    using MyObservables
+
+    rt = Runtime()
+
+    # Default: always propagate
+    s_default = signal(rt, [1])
+    log_default = Vector{Int}[]
+    effect!(rt) do
+        push!(log_default, s_default[])
+    end
+    @test log_default == [[1]]
+    s_default[] = [1]  # isequal but not ===
+    @test log_default == [[1], [1]]  # effect re-runs
+
+    # skip_equal: suppress when isequal
+    s_skip = signal(rt, [1]; skip_equal=true)
+    log_skip = Vector{Int}[]
+    effect!(rt) do
+        push!(log_skip, s_skip[])
+    end
+    @test log_skip == [[1]]
+    s_skip[] = [1]  # isequal to previous
+    @test log_skip == [[1]]  # effect suppressed
+    s_skip[] = [2]  # value changed
+    @test log_skip == [[1], [2]]  # effect runs
+end
+
 @testitem "lazy pull skips unused stale deps" begin
     using MyObservables
 

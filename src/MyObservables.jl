@@ -26,9 +26,10 @@ mutable struct Signal{T} <: AbstractNode
     value::T
     version::UInt64
     const users::Set{AbstractNode}
+    const skip_equal::Bool
 end
 
-signal(rt::Runtime, value::T) where {T} = Signal{T}(rt, value, UInt64(1), Set{AbstractNode}())
+signal(rt::Runtime, value::T; skip_equal::Bool=false) where {T} = Signal{T}(rt, value, UInt64(1), Set{AbstractNode}(), skip_equal)
 
 # ── Runtime extraction ────────────────────────────────────────────
 function runtime(node::AbstractNode, nodes::AbstractNode...)
@@ -85,6 +86,11 @@ end
 # ── Version helper ──────────────────────────────────────────────────
 node_version(s::Signal) = s.version
 node_version(c::Computed) = c.version
+
+value_changed(old, new, skip_equal::Bool) =
+    old === new ? false :
+    !skip_equal ? true :
+    !isequal(old, new)
 
 # ── Lazy pull: check whether any dep version changed ──────────────
 function deps_changed!(node::AbstractNode)::Bool
@@ -174,10 +180,7 @@ function update!(c::Computed)
     end
 
     had_value = isdefined(c, :value)
-    changed = !had_value ? true :
-              c.value === new_value ? false :
-              !c.skip_equal ? true :
-              !isequal(c.value, new_value)
+    changed = !had_value || value_changed(c.value, new_value, c.skip_equal)
     c.value = new_value
     c.state = CLEAN
     changed && (c.version += 1)
@@ -233,10 +236,14 @@ end
 
 # ── setindex!: write + invalidate + flush ───────────────────────────
 function Base.setindex!(s::Signal{T}, value) where {T}
-    s.value = convert(T, value)
-    s.version += 1
-    propagate_dirty!(s)
-    maybe_flush!(s.runtime)
+    new_value = convert(T, value)
+    changed = value_changed(s.value, new_value, s.skip_equal)
+    s.value = new_value
+    if changed
+        s.version += 1
+        propagate_dirty!(s)
+        maybe_flush!(s.runtime)
+    end
     return value
 end
 
