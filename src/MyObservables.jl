@@ -86,6 +86,53 @@ end
 node_version(s::Signal) = s.version
 node_version(c::Computed) = c.version
 
+# ── Lazy pull: check whether any dep version changed ──────────────
+function deps_changed!(node::AbstractNode)::Bool
+    length(node.deps) != length(node.dep_versions) && return true
+    for (dep, dep_version) in zip(node.deps, node.dep_versions)
+        if dep isa Computed && dep.state == DIRTY
+            update!(dep)
+        end
+        node_version(dep) != dep_version && return true
+    end
+    return false
+end
+
+# ── Tracked execution: run f() with dependency recording ──────────
+function execute_tracked!(f, node::AbstractNode)
+    rt = node.runtime
+    old_deps = node.deps
+    node.deps = AbstractNode[]
+    prev = rt.current
+    rt.current = node
+    try
+        result = f()
+        cleanup_stale_deps!(node, old_deps)
+        unique!(node.deps)
+        node.dep_versions = map(node_version, node.deps)
+        return result
+    catch
+        new_partial = node.deps
+        node.deps = old_deps
+        cleanup_stale_deps!(node, new_partial)
+        rethrow()
+    finally
+        rt.current = prev
+    end
+end
+
+# ── Remove node from all its deps' user sets ──────────────────────
+function remove_from_deps!(node::AbstractNode)
+    for dep in node.deps
+        delete!(dep.users, node)
+        if dep isa Computed && isempty(dep.users)
+            unsubscribe!(dep)
+        end
+    end
+    empty!(node.deps)
+    empty!(node.dep_versions)
+end
+
 # ── Dependency tracking ─────────────────────────────────────────────
 function track!(consumer::AbstractNode, provider::AbstractNode)
     @assert consumer.runtime === provider.runtime "Nodes belong to different runtimes"
@@ -112,52 +159,25 @@ end
 function update!(c::Computed)
     c.state == COMPUTING && error("Cycle detected: a Computed depends on itself")
     c.state = COMPUTING
-    rt = c.runtime
 
-    # Lazy pull + version check: pull deps one at a time, stop on first change.
-    # Remaining dirty deps are pulled lazily by getindex during recompute,
-    # avoiding unnecessary updates of deps that dynamic re-tracking may drop.
-    if isdefined(c, :value) && length(c.deps) == length(c.dep_versions)
-        needs_recompute = false
-        for i in eachindex(c.deps)
-            dep = c.deps[i]
-            dep isa Computed && dep.state == DIRTY && update!(dep)
-            if node_version(dep) != c.dep_versions[i]
-                needs_recompute = true
-                break
-            end
-        end
-        if !needs_recompute
-            c.state = CLEAN
-            return nothing
-        end
+    if isdefined(c, :value) && !deps_changed!(c)
+        c.state = CLEAN
+        return nothing
     end
 
-    # Re-run with dependency tracking
-    old_deps = c.deps
-    c.deps = AbstractNode[]
-
-    prev = rt.current
-    rt.current = c
     local new_value
     try
-        new_value = c.f()
+        new_value = execute_tracked!(c.f, c)
     catch
-        new_partial = c.deps
-        c.deps = old_deps
-        cleanup_stale_deps!(c, new_partial)
         c.state = DIRTY
         rethrow()
-    finally
-        rt.current = prev
     end
 
-    cleanup_stale_deps!(c, old_deps)
-    unique!(c.deps)
-    c.dep_versions = map(node_version, c.deps)
-
     had_value = isdefined(c, :value)
-    changed = !had_value || !c.skip_equal || !isequal(c.value, new_value)
+    changed = !had_value ? true :
+              c.value === new_value ? false :
+              !c.skip_equal ? true :
+              !isequal(c.value, new_value)
     c.value = new_value
     c.state = CLEAN
     changed && (c.version += 1)
@@ -167,62 +187,30 @@ end
 # ── Effect execution ────────────────────────────────────────────────
 function run_effect!(e::EffectNode)
     e.disposed && return
-    rt = e.runtime
 
-    # Lazy pull + version check: pull deps one at a time, stop on first change.
-    if !isempty(e.dep_versions) && length(e.deps) == length(e.dep_versions)
-        needs_rerun = false
-        for i in eachindex(e.deps)
-            dep = e.deps[i]
-            dep isa Computed && dep.state == DIRTY && update!(dep)
-            if node_version(dep) != e.dep_versions[i]
-                needs_rerun = true
-                break
-            end
-        end
-        if !needs_rerun
-            e.state = CLEAN
-            return
-        end
-    end
-
-    # Run with dependency tracking
-    old_deps = e.deps
-    e.deps = AbstractNode[]
-
-    prev = rt.current
-    rt.current = e
-    try
-        e.f()
+    if !isempty(e.dep_versions) && !deps_changed!(e)
         e.state = CLEAN
-    finally
-        rt.current = prev
+        return
     end
 
-    cleanup_stale_deps!(e, old_deps)
-    unique!(e.deps)
-    e.dep_versions = map(node_version, e.deps)
+    execute_tracked!(e.f, e)
+    e.state = CLEAN
 end
 
 # ── Stale edge cleanup ─────────────────────────────────────────────
 function cleanup_stale_deps!(node::AbstractNode, old_deps::Vector{AbstractNode})
     new_deps_set = Set(node.deps)
-    for old in old_deps
-        if old ∉ new_deps_set
-            delete!(old.users, node)
-            old isa Computed && isempty(old.users) && unsubscribe!(old)
+    for old in setdiff(old_deps, new_deps_set)
+        delete!(old.users, node)
+        if old isa Computed && isempty(old.users)
+            unsubscribe!(old)
         end
     end
 end
 
 # ── Liveness: unsubscribe cascade ──────────────────────────────────
 function unsubscribe!(c::Computed)
-    for dep in c.deps
-        delete!(dep.users, c)
-        dep isa Computed && isempty(dep.users) && unsubscribe!(dep)
-    end
-    empty!(c.deps)
-    empty!(c.dep_versions)
+    remove_from_deps!(c)
     c.state = DIRTY
 end
 
@@ -282,12 +270,7 @@ end
 function dispose!(e::EffectNode)
     e.disposed = true
     filter!(!=(e), e.runtime.pending_effects)
-    for dep in e.deps
-        delete!(dep.users, e)
-        dep isa Computed && isempty(dep.users) && unsubscribe!(dep)
-    end
-    empty!(e.deps)
-    empty!(e.dep_versions)
+    remove_from_deps!(e)
 end
 
 # ── Observable bridge stubs (overridden by ext/ObservablesExt.jl) ──
