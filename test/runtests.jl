@@ -451,6 +451,100 @@ end
     @test log2 == [10, 20, 30]  # still running
 end
 
+@testitem "computed setindex!" begin
+    using MyObservables
+
+    rt = Runtime()
+    s = signal(rt, 3)
+    c = computed(rt) do
+        s[] * 2
+    end
+
+    log = Int[]
+    e = effect!(rt) do
+        push!(log, c[])
+    end
+    @test log == [6]
+
+    # Manual override: downstream sees new value, upstream unchanged
+    c[] = 99
+    @test log == [6, 99]
+    @test s[] == 3  # upstream untouched
+
+    # Temporary: upstream change causes recomputation (override gone)
+    s[] = 10
+    @test log == [6, 99, 20]  # back to s[] * 2
+
+    # Override previously-evaluated computed
+    c2 = computed(rt) do
+        s[] + 1
+    end
+    @test c2[] == 11  # establish deps
+    log2 = Int[]
+    c2[] = 42
+    e2 = effect!(rt) do
+        push!(log2, c2[])
+    end
+    @test log2 == [42]
+
+    # Upstream change recomputes (override gone)
+    s[] = 5
+    @test log2 == [42, 6]
+
+    # Works within batch
+    c3 = computed(rt) do
+        s[] * 3
+    end
+    log3 = Int[]
+    e3 = effect!(rt) do
+        push!(log3, c3[])
+    end
+    @test log3 == [15]
+
+    batch(rt) do
+        c3[] = 100
+        s[] = 1  # this dirties c3 again
+    end
+    # After batch: c3 is dirty from s change, effect pulls fresh value
+    @test log3 == [15, 3]  # s[]=1, c3 recomputes to 1*3=3
+
+    # Diamond: set intermediate computed, only downstream updates
+    a = signal(rt, 10)
+    left = computed(rt) do
+        a[] + 1
+    end
+    right = computed(rt) do
+        a[] + 2
+    end
+    bottom = computed(rt) do
+        left[] + right[]
+    end
+
+    log4 = Int[]
+    e4 = effect!(rt) do
+        push!(log4, bottom[])
+    end
+    @test log4 == [23]  # (10+1) + (10+2)
+
+    left[] = 50  # override left, right and a unchanged
+    @test log4 == [23, 62]  # 50 + (10+2)
+    @test a[] == 10  # upstream untouched
+
+    # skip_equal respected
+    c_skip = computed(rt; skip_equal=true) do
+        a[] > 0 ? [1] : [0]
+    end
+    log5 = Vector{Int}[]
+    e5 = effect!(rt) do
+        push!(log5, c_skip[])
+    end
+    @test log5 == [[1]]
+    c_skip[] = [1]  # isequal to current value
+    @test log5 == [[1]]  # suppressed
+    c_skip[] = [2]  # different value
+    @test log5 == [[1], [2]]
+end
+
 @testitem "computed type inference" begin
     using MyObservables
 

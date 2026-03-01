@@ -253,6 +253,19 @@ function Base.setindex!(s::Signal{T}, value) where {T}
     return value
 end
 
+function Base.setindex!(c::Computed{T}, value) where {T}
+    new_value = convert(T, value)
+    changed = c.version == 0 || value_changed(c.value, new_value, c.skip_equal)
+    c.value = new_value
+    c.state = CLEAN
+    if changed
+        c.version += 1
+        propagate_dirty!(c)
+        maybe_flush!(c.runtime)
+    end
+    return value
+end
+
 # ── Flush pending effects ──────────────────────────────────────────
 function maybe_flush!(rt::Runtime)
     rt.batch_depth > 0 && return
