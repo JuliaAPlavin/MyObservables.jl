@@ -26,24 +26,48 @@ using MyObservables: @lift
 
 Two sliders control amplitude and frequency of a sine curve. All three approaches produce identical results. Observables and MyObservables share the same `@lift` syntax; ComputeGraph requires explicit graph construction.
 
-**Observables.jl:**
+<table>
+<tr>
+<th>Observables.jl</th>
+<th>MyObservables</th>
+<th>ComputeGraph</th>
+</tr>
+<tr>
+<td>
+
 ```julia
 fig = Figure()
 ax = Axis(fig[1, 1])
-amp = Slider(fig[2, 1], range=0.1:0.1:3.0, startvalue=1.0).value
-freq = Slider(fig[3, 1], range=0.1:0.1:5.0, startvalue=1.0).value
+amp = Slider(fig[2, 1], range=0.1:0.1:3.0).value
+freq = Slider(fig[3, 1], range=0.1:0.1:5.0).value
 
 xs = LinRange(0, 4π, 200)
 ys = @lift $amp .* sin.($freq .* xs)
 lines!(ax, xs, ys)
 ```
 
-**ComputeGraph:**
+</td>
+<td>
+
 ```julia
 fig = Figure()
 ax = Axis(fig[1, 1])
-amp = Slider(fig[2, 1], range=0.1:0.1:3.0, startvalue=1.0).value
-freq = Slider(fig[3, 1], range=0.1:0.1:5.0, startvalue=1.0).value
+amp = Slider(fig[2, 1], range=0.1:0.1:3.0).value |> from_obs
+freq = Slider(fig[3, 1], range=0.1:0.1:5.0).value |> from_obs
+
+xs = LinRange(0, 4π, 200)
+ys = @lift $amp .* sin.($freq .* xs)
+lines!(ax, xs, ys)
+```
+
+</td>
+<td>
+
+```julia
+fig = Figure()
+ax = Axis(fig[1, 1])
+amp = Slider(fig[2, 1], range=0.1:0.1:3.0).value
+freq = Slider(fig[3, 1], range=0.1:0.1:5.0).value
 
 xs = LinRange(0, 4π, 200)
 graph = ComputeGraph()
@@ -55,17 +79,9 @@ end
 lines!(ax, xs, graph[:ys])
 ```
 
-**MyObservables:**
-```julia
-fig = Figure()
-ax = Axis(fig[1, 1])
-amp = Slider(fig[2, 1], range=0.1:0.1:3.0, startvalue=1.0).value |> from_obs
-freq = Slider(fig[3, 1], range=0.1:0.1:5.0, startvalue=1.0).value |> from_obs
-
-xs = LinRange(0, 4π, 200)
-ys = @lift $amp .* sin.($freq .* xs)
-lines!(ax, xs, ys)
-```
+</td>
+</tr>
+</table>
 
 ### 2. Diamond Dependency
 
@@ -79,11 +95,19 @@ One slider feeds three intermediate computations that merge into a single expens
        combined  ← expensive, tracked by calc_count
 ```
 
-**Observables.jl:**
+<table>
+<tr>
+<th>Observables.jl</th>
+<th>MyObservables</th>
+<th>ComputeGraph</th>
+</tr>
+<tr>
+<td>
+
 ```julia
 fig = Figure()
 ax = Axis(fig[1, 1])
-phase = Slider(fig[2, 1], range=0:0.1:2π, startvalue=0.0).value
+phase = Slider(fig[2, 1], range=0:0.1:2π).value
 
 xs = LinRange(0, 4π, 200)
 curve_a = @lift sin.(xs .+ $phase)
@@ -96,14 +120,38 @@ combined = @lift begin
     $curve_a .+ $curve_b .* $curve_c
 end
 lines!(ax, xs, combined)
-# Moving phase slider: calc_count increases by 3 per update
+# calc_count increases by 3 per update ✗
 ```
 
-**ComputeGraph:**
+</td>
+<td>
+
 ```julia
 fig = Figure()
 ax = Axis(fig[1, 1])
-phase = Slider(fig[2, 1], range=0:0.1:2π, startvalue=0.0).value
+phase = Slider(fig[2, 1], range=0:0.1:2π).value |> from_obs
+
+xs = LinRange(0, 4π, 200)
+curve_a = @lift sin.(xs .+ $phase)
+curve_b = @lift cos.(xs .+ $phase)
+curve_c = @lift sin.(2 .* xs .+ $phase)
+
+calc_count = Ref(0)
+combined = @lift begin
+    calc_count[] += 1
+    $curve_a .+ $curve_b .* $curve_c
+end
+lines!(ax, xs, combined)
+# calc_count increases by 1 per update ✓
+```
+
+</td>
+<td>
+
+```julia
+fig = Figure()
+ax = Axis(fig[1, 1])
+phase = Slider(fig[2, 1], range=0:0.1:2π).value
 
 xs = LinRange(0, 4π, 200)
 graph = ComputeGraph()
@@ -124,39 +172,31 @@ register_computation!(graph, [:curve_a, :curve_b, :curve_c], [:combined]) do inp
     (inputs.curve_a .+ inputs.curve_b .* inputs.curve_c,)
 end
 lines!(ax, xs, graph[:combined])
-# Moving phase slider: calc_count increases by 1 per update
+# calc_count increases by 1 per update ✓
 ```
 
-**MyObservables:**
-```julia
-fig = Figure()
-ax = Axis(fig[1, 1])
-phase = Slider(fig[2, 1], range=0:0.1:2π, startvalue=0.0).value |> from_obs
-
-xs = LinRange(0, 4π, 200)
-curve_a = @lift sin.(xs .+ $phase)
-curve_b = @lift cos.(xs .+ $phase)
-curve_c = @lift sin.(2 .* xs .+ $phase)
-
-calc_count = Ref(0)
-combined = @lift begin
-    calc_count[] += 1
-    $curve_a .+ $curve_b .* $curve_c
-end
-lines!(ax, xs, combined)
-# Moving phase slider: calc_count increases by 1 per update
-```
+</td>
+</tr>
+</table>
 
 ### 3. Conditional Dependencies
 
 A toggle controls whether an expensive analysis runs. When the toggle is OFF, only a cheap default is shown. With Observables.jl and ComputeGraph, `analysis` recomputes whenever `freq` changes — both treat `freq` as a static dependency regardless of toggle state. With MyObservables, dependencies are tracked dynamically: when the toggle is OFF, `analysis` is never read, so it unsubscribes from `freq` entirely.
 
-**Observables.jl:**
+<table>
+<tr>
+<th>Observables.jl</th>
+<th>MyObservables</th>
+<th>ComputeGraph</th>
+</tr>
+<tr>
+<td>
+
 ```julia
 fig = Figure()
 ax = Axis(fig[1, 1])
 active = Toggle(fig[2, 1], active=false).active
-freq = Slider(fig[3, 1], range=0.1:0.1:5.0, startvalue=1.0).value
+freq = Slider(fig[3, 1], range=0.1:0.1:5.0).value
 
 xs = LinRange(0, 4π, 200)
 calc_count = Ref(0)
@@ -166,15 +206,37 @@ analysis = @lift begin
 end
 ys = @lift $active ? $analysis : sin.(xs)
 lines!(ax, xs, ys)
-# Toggle OFF, move freq 100 times → calc_count = 100
+# toggle OFF, mass freq 100× → calc_count = 100 ✗
 ```
 
-**ComputeGraph:**
+</td>
+<td>
+
+```julia
+fig = Figure()
+ax = Axis(fig[1, 1])
+active = Toggle(fig[2, 1], active=false).active |> from_obs
+freq = Slider(fig[3, 1], range=0.1:0.1:5.0).value |> from_obs
+
+xs = LinRange(0, 4π, 200)
+calc_count = Ref(0)
+analysis = @lift begin
+    calc_count[] += 1
+    cumsum(sin.($freq .* xs)) ./ (1:length(xs))
+end
+ys = @lift $active ? $analysis : sin.(xs)
+lines!(ax, xs, ys)
+# toggle OFF, move freq 100× → calc_count = 0 ✓
+```
+
+</td>
+<td>
+
 ```julia
 fig = Figure()
 ax = Axis(fig[1, 1])
 active = Toggle(fig[2, 1], active=false).active
-freq = Slider(fig[3, 1], range=0.1:0.1:5.0, startvalue=1.0).value
+freq = Slider(fig[3, 1], range=0.1:0.1:5.0).value
 
 xs = LinRange(0, 4π, 200)
 graph = ComputeGraph()
@@ -190,26 +252,12 @@ register_computation!(graph, [:active, :analysis], [:ys]) do inputs, changed, ca
     inputs.active ? (inputs.analysis,) : (sin.(xs),)
 end
 lines!(ax, xs, graph[:ys])
-# Toggle OFF, move freq 100 times → calc_count = 100
+# toggle OFF, move freq 100× → calc_count = 100 ✗
 ```
 
-**MyObservables:**
-```julia
-fig = Figure()
-ax = Axis(fig[1, 1])
-active = Toggle(fig[2, 1], active=false).active |> from_obs
-freq = Slider(fig[3, 1], range=0.1:0.1:5.0, startvalue=1.0).value |> from_obs
-
-xs = LinRange(0, 4π, 200)
-calc_count = Ref(0)
-analysis = @lift begin
-    calc_count[] += 1
-    cumsum(sin.($freq .* xs)) ./ (1:length(xs))
-end
-ys = @lift $active ? $analysis : sin.(xs)
-lines!(ax, xs, ys)
-# Toggle OFF, move freq 100 times → calc_count = 0!
-```
+</td>
+</tr>
+</table>
 
 ## Summary
 
