@@ -30,6 +30,7 @@ mutable struct Signal{T} <: AbstractNode
 end
 
 signal(rt::Runtime, value::T; skip_equal::Bool=false) where {T} = Signal{T}(rt, value, UInt64(1), Set{AbstractNode}(), skip_equal)
+signal(rt::Runtime, ::Type{T}, value; skip_equal::Bool=false) where {T} = Signal{T}(rt, convert(T, value), UInt64(1), Set{AbstractNode}(), skip_equal)
 
 # ── Runtime extraction ────────────────────────────────────────────
 function runtime(node::AbstractNode, nodes::AbstractNode...)

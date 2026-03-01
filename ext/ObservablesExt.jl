@@ -22,7 +22,7 @@ end
 MyObservables.from_obs(obs::Observable) = MyObservables.from_obs(obs, MyObservables._GLOBAL_RT[])
 
 function MyObservables.from_obs(obs::Observable{T}, rt::Runtime) where {T}
-    s = signal(rt, obs[])
+    s = signal(rt, T, obs[])
     obsfunc = on(obs) do val
         s[] = val
     end
