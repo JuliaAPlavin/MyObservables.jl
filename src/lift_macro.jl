@@ -8,7 +8,7 @@ function expand_fstrings(e::Expr, mod)
     if Base.isexpr(e, :macrocall) && length(e.args) >= 1 && e.args[1] == Symbol("@f_str")
         return macroexpand(mod, e; recursive=true)
     end
-    Expr(e.head, [expand_fstrings(a, mod) for a in e.args]...)
+    Expr(e.head, map(a -> expand_fstrings(a, mod), e.args)...)
 end
 
 
