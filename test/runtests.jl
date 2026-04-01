@@ -211,9 +211,54 @@ end
     s[] = 5
     @test log == [0, 9]  # no more updates
 
-    # c should have no users and be unsubscribed
+    # c should have no users and be unsubscribed (deps kept for reactivation)
     @test isempty(c.users)
-    @test isempty(c.deps)
+    @test !isempty(c.deps)
+    @test isempty(c.dep_versions)
+end
+
+@testitem "reactivation after unsubscribe" begin
+    using MyObservables
+
+    rt = Runtime()
+
+    # Scenario 1: dispose effect, then read computed directly
+    s = signal(rt, 1)
+    c = computed(rt) do; s[] * 2; end
+    e = effect!(rt) do; c[]; end
+    @test c[] == 2
+    dispose!(e)
+    s[] = 100
+    @test c[] == 200  # must not return stale value 2
+
+    # Scenario 2: re-read from inside a new computed after unsubscribe
+    rt2 = Runtime()
+    s2 = signal(rt2, 1)
+    c2 = computed(rt2) do; s2[] * 2; end
+    e2 = effect!(rt2) do; c2[]; end
+    dispose!(e2)
+    s2[] = 50
+    c2_wrapper = computed(rt2) do; c2[] + 1; end
+    @test c2_wrapper[] == 101  # must not return stale 2+1=3
+
+    # Scenario 3: chain still propagates after reactivation
+    s2[] = 10
+    @test c2_wrapper[] == 21  # c2=20, wrapper=21
+
+    # Scenario 4: conditional dep triggers unsubscribe, then re-read
+    rt3 = Runtime()
+    flag = signal(rt3, true)
+    s3 = signal(rt3, 1)
+    inner = computed(rt3) do; s3[] * 2; end
+    outer = computed(rt3) do; flag[] ? inner[] : 999; end
+    e3 = effect!(rt3) do; outer[]; end
+
+    @test outer[] == 2
+    flag[] = false        # inner loses its last user → unsubscribe
+    @test outer[] == 999
+    s3[] = 100            # inner doesn't get notified
+    flag[] = true         # outer reads inner again
+    @test outer[] == 200  # must re-execute inner, not return stale 2
 end
 
 @testitem "equal value suppression" begin

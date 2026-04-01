@@ -248,7 +248,13 @@ end
 
 # ── Liveness: unsubscribe cascade ──────────────────────────────────
 function unsubscribe!(c::AbstractDerived)
-    remove_from_deps!(c)
+    for dep in c.deps
+        delete!(dep.users, c)
+        if dep isa AbstractDerived && isempty(dep.users)
+            unsubscribe!(dep)
+        end
+    end
+    empty!(c.dep_versions)
     c.state = DIRTY
 end
 
