@@ -1239,3 +1239,288 @@ end
     @test trajectory.version == traj_ver  # not recomputed
     @test trajectory[] == [21, 22, 23]
 end
+
+@testitem "linked basics" begin
+    using MyObservables
+    using MyObservables: linked
+
+    rt = Runtime()
+    a = signal(rt, 1)
+    b = signal(rt, 2)
+
+    # Forward: works like computed (lazy, tracked)
+    c = linked(rt; set = v -> (a[] = v[1]; b[] = v[2])) do
+        (a[], b[])
+    end
+    @test c[] == (1, 2)
+
+    # Forward: upstream change updates linked node
+    a[] = 10
+    @test c[] == (10, 2)
+
+    # Backward: setting linked node propagates to sources
+    c[] = (100, 200)
+    @test a[] == 100
+    @test b[] == 200
+    @test c[] == (100, 200)
+
+    # Effects fire after backward set
+    log = Tuple{Int,Int}[]
+    e = effect!(rt) do
+        push!(log, c[])
+    end
+    @test log == [(100, 200)]
+
+    c[] = (3, 4)
+    @test log == [(100, 200), (3, 4)]
+    @test a[] == 3
+    @test b[] == 4
+
+    # Forward still works after backward
+    a[] = 50
+    @test log == [(100, 200), (3, 4), (50, 4)]
+end
+
+@testitem "linked caching" begin
+    using MyObservables
+    using MyObservables: linked
+
+    rt = Runtime()
+    s = signal(rt, 1)
+    call_count = Ref(0)
+    l = linked(rt; set = v -> (s[] = v)) do
+        call_count[] += 1
+        s[] * 10
+    end
+
+    e = effect!(rt) do
+        l[]
+        l[]  # read twice
+    end
+    @test call_count[] == 1  # computed only once
+
+    s[] = 2
+    @test call_count[] == 2  # recomputed once
+end
+
+@testitem "linked batching" begin
+    using MyObservables
+    using MyObservables: linked
+
+    rt = Runtime()
+    a = signal(rt, 1)
+    b = signal(rt, 2)
+
+    c = linked(rt; set = v -> (a[] = v[1]; b[] = v[2])) do
+        (a[], b[])
+    end
+
+    # Effect sees only the final state, not intermediate (10, 2)
+    log = Tuple{Int,Int}[]
+    e = effect!(rt) do
+        push!(log, c[])
+    end
+    @test log == [(1, 2)]
+
+    c[] = (10, 20)
+    @test log == [(1, 2), (10, 20)]  # one update, not two
+
+    # Backward set inside existing batch
+    batch(rt) do
+        c[] = (30, 40)
+        a[] = 50  # extra mutation in same batch
+    end
+    @test log == [(1, 2), (10, 20), (50, 40)]  # one flush at end
+end
+
+@testitem "linked re-entrancy detection" begin
+    using MyObservables
+    using MyObservables: linked
+
+    rt = Runtime()
+    s = signal(rt, 1)
+
+    # Self-referential setter
+    local l
+    l = linked(rt; set = v -> (l[] = v + 1)) do
+        s[]
+    end
+    l[]  # establish deps
+    @test_throws ErrorException l[] = 10
+end
+
+@testitem "linked error recovery" begin
+    using MyObservables
+    using MyObservables: linked
+
+    rt = Runtime()
+    a = signal(rt, 1)
+    b = signal(rt, 2)
+
+    c = linked(rt; set = v -> begin
+        a[] = v[1]
+        error("boom")
+        b[] = v[2]
+    end) do
+        (a[], b[])
+    end
+
+    log = Tuple{Int,Int}[]
+    e = effect!(rt) do
+        push!(log, c[])
+    end
+    @test log == [(1, 2)]
+
+    @test_throws ErrorException c[] = (10, 20)
+    # a was set before error, b was not
+    @test a[] == 10
+    @test b[] == 2
+    # node is in consistent state (dirty from a's update), can still be read
+    @test c[] == (10, 2)
+end
+
+@testitem "linked chained" begin
+    using MyObservables
+    using MyObservables: linked
+
+    rt = Runtime()
+    a = signal(rt, 1)
+    b = signal(rt, 2)
+
+    # C aggregates a and b
+    c = linked(rt; set = v -> (a[] = v[1]; b[] = v[2])) do
+        (a[], b[])
+    end
+
+    # D transforms C
+    d = linked(rt; set = v -> (c[] = (v, v))) do
+        c[][1] + c[][2]
+    end
+
+    @test d[] == 3
+    d[] = 10  # → c[] = (10, 10) → a = 10, b = 10
+    @test a[] == 10
+    @test b[] == 10
+    @test c[] == (10, 10)
+    @test d[] == 20
+end
+
+@testitem "linked no spurious dep tracking" begin
+    using MyObservables
+    using MyObservables: linked
+
+    rt = Runtime()
+    a = signal(rt, 1)
+    b = signal(rt, 10)
+
+    # Setter reads b to compute what to set a
+    c = linked(rt; set = v -> (a[] = v - peek(b))) do
+        a[] + b[]
+    end
+
+    log = Int[]
+    e = effect!(rt) do
+        push!(log, c[])
+    end
+    @test log == [11]
+
+    # Set c from within an effect-like context should not
+    # register b as a dependency of anything unexpected
+    c[] = 15  # a[] = 15 - 10 = 5
+    @test a[] == 5
+    @test c[] == 15
+end
+
+@testitem "linked read-A-write-B" begin
+    using MyObservables
+    using MyObservables: linked
+
+    rt = Runtime()
+    source = signal(rt, 10)
+    target = signal(rt, 0)
+
+    junction = linked(rt; set = v -> (target[] = v)) do
+        source[]
+    end
+
+    @test junction[] == 10
+    junction[] = 42
+    @test target[] == 42
+    @test source[] == 10  # untouched
+
+    # Forward still works
+    source[] = 20
+    @test junction[] == 20
+end
+
+@testitem "linked with sweep" begin
+    using MyObservables
+    using MyObservables: linked, sweep
+
+    rt = Runtime()
+    a = signal(rt, 1)
+    b = signal(rt, 2)
+
+    c = linked(rt; set = v -> (a[] = v[1]; b[] = v[2])) do
+        (a[], b[])
+    end
+
+    # sweep over source signal — linked node recomputes via forward
+    @test sweep(a, [10, 20, 30], c) == [(10, 2), (20, 2), (30, 2)]
+    @test a[] == 1  # restored
+end
+
+@testitem "computed_bidi" begin
+    using MyObservables
+    using MyObservables: computed_bidi
+    using Accessors
+
+    rt = Runtime()
+
+    # Property optic
+    state = signal(rt, (x=1, y=2, z=3))
+    vx = computed_bidi(@optic(_.x), state)
+    @test vx[] == 1
+
+    state[] = (x=10, y=2, z=3)
+    @test vx[] == 10
+
+    # Backward: set vx updates state
+    vx[] = 42
+    @test state[] == (x=42, y=2, z=3)
+    @test vx[] == 42
+
+    # Composed optic
+    nested = signal(rt, (user=(name="Alice", age=30), theme="dark"))
+    name_view = computed_bidi(@optic(_.user.name), nested)
+    @test name_view[] == "Alice"
+
+    name_view[] = "Bob"
+    @test nested[] == (user=(name="Bob", age=30), theme="dark")
+
+    # Effects fire
+    log = String[]
+    e = effect!(rt) do
+        push!(log, name_view[])
+    end
+    @test log == ["Bob"]
+    name_view[] = "Charlie"
+    @test log == ["Bob", "Charlie"]
+    @test nested[].user.name == "Charlie"
+
+    # Index optic on tuple
+    t = signal(rt, (10, 20, 30))
+    v2 = computed_bidi(@optic(_[2]), t)
+    @test v2[] == 20
+    v2[] = 99
+    @test t[] == (10, 99, 30)
+
+    # Round-trip consistency
+    s = signal(rt, (a=1, b=2))
+    va = computed_bidi(@optic(_.a), s)
+    va[] = 100
+    @test va[] == 100  # GetPut law
+    old_s = s[]
+    va[] = va[]  # PutGet: setting current value is no-op (conceptually)
+    @test s[] == old_s
+end

@@ -6,14 +6,17 @@ version = "0.1.4"
 [deps]
 
 [weakdeps]
+Accessors = "7d9f7c33-5ae7-4f3b-8dc6-eff91059b697"
 Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
 Observables = "510215fc-4207-5dde-b226-833fc4488ee2"
 
 [extensions]
+AccessorsExt = "Accessors"
 MakieExt = "Makie"
 ObservablesExt = "Observables"
 
 [compat]
+Accessors = "0.1"
 Makie = "0.24"
 Observables = "0.5"
 julia = "1.10"

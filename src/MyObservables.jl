@@ -9,6 +9,7 @@ export runtime
 
 # ── Abstract base ───────────────────────────────────────────────────
 abstract type AbstractNode{T} end
+abstract type AbstractDerived{T} <: AbstractNode{T} end
 
 # ── Runtime ─────────────────────────────────────────────────────────
 mutable struct Runtime
@@ -42,7 +43,7 @@ function runtime(node::AbstractNode, nodes::AbstractNode...)
 end
 
 # ── Computed ────────────────────────────────────────────────────────
-mutable struct Computed{T} <: AbstractNode{T}
+mutable struct Computed{T} <: AbstractDerived{T}
     const runtime::Runtime
     const f
     version::UInt64
@@ -66,6 +67,35 @@ end
 function computed(f, rt::Runtime; skip_equal::Bool=false)
     T = Core.Compiler.return_type(f, Tuple{})
     Computed{T}(rt, f; skip_equal)
+end
+
+# ── Linked (bidirectional derived) ──────────────────────────────────
+mutable struct Linked{T} <: AbstractDerived{T}
+    const runtime::Runtime
+    const f
+    version::UInt64
+    state::NodeState
+    deps::Vector{AbstractNode}
+    dep_versions::Vector{UInt64}
+    const users::Set{AbstractNode}
+    const skip_equal::Bool
+    const setter
+    in_setter::Bool
+    value::T
+
+    function Linked{T}(runtime::Runtime, f, setter; skip_equal::Bool=false) where {T}
+        new{T}(runtime, f, UInt64(0), DIRTY, AbstractNode[], UInt64[], Set{AbstractNode}(), skip_equal, setter, false)
+        # value left #undef
+    end
+end
+
+function linked(f, rt::Runtime; set, skip_equal::Bool=false)
+    T = Core.Compiler.return_type(f, Tuple{})
+    Linked{T}(rt, f, set; skip_equal)
+end
+
+function linked(f, rt::Runtime, ::Type{T}; set, skip_equal::Bool=false) where {T}
+    Linked{T}(rt, f, set; skip_equal)
 end
 
 # ── Effect ──────────────────────────────────────────────────────────
@@ -94,7 +124,7 @@ value_changed(old, new, skip_equal::Bool) =
 function deps_changed!(node::AbstractNode)::Bool
     length(node.deps) != length(node.dep_versions) && return true
     for (dep, dep_version) in zip(node.deps, node.dep_versions)
-        if dep isa Computed && dep.state == DIRTY
+        if dep isa AbstractDerived && dep.state == DIRTY
             update!(dep)
         end
         dep.version != dep_version && return true
@@ -128,7 +158,7 @@ end
 function remove_from_deps!(node::AbstractNode)
     for dep in node.deps
         delete!(dep.users, node)
-        if dep isa Computed && isempty(dep.users)
+        if dep isa AbstractDerived && isempty(dep.users)
             unsubscribe!(dep)
         end
     end
@@ -151,7 +181,7 @@ function Base.getindex(s::Signal{T})::T where {T}
     return s.value
 end
 
-function Base.getindex(c::Computed{T})::T where {T}
+function Base.getindex(c::AbstractDerived{T})::T where {T}
     c.state == COMPUTING && error("Cycle detected: a Computed depends on itself")
     current = c.runtime.current
     current !== nothing && track!(current, c)
@@ -162,14 +192,14 @@ end
 # ── Untracked read ────────────────────────────────────────────────
 Base.peek(s::Signal) = s.value
 
-function Base.peek(c::Computed{T})::T where {T}
+function Base.peek(c::AbstractDerived{T})::T where {T}
     c.state == COMPUTING && error("Cycle detected: a Computed depends on itself")
     c.state == DIRTY && update!(c)
     return c.value
 end
 
 # ── Pull-to-recompute ──────────────────────────────────────────────
-function update!(c::Computed)
+function update!(c::AbstractDerived)
     c.state == COMPUTING && error("Cycle detected: a Computed depends on itself")
     c.state = COMPUTING
 
@@ -210,14 +240,14 @@ end
 function cleanup_stale_deps!(node::AbstractNode, old_deps::Vector{AbstractNode})
     for old in setdiff(old_deps, node.deps)
         delete!(old.users, node)
-        if old isa Computed && isempty(old.users)
+        if old isa AbstractDerived && isempty(old.users)
             unsubscribe!(old)
         end
     end
 end
 
 # ── Liveness: unsubscribe cascade ──────────────────────────────────
-function unsubscribe!(c::Computed)
+function unsubscribe!(c::AbstractDerived)
     remove_from_deps!(c)
     c.state = DIRTY
 end
@@ -227,7 +257,7 @@ function propagate_dirty!(source::AbstractNode)
     queue = collect(source.users)
     while !isempty(queue)
         node = popfirst!(queue)
-        if node isa Computed
+        if node isa AbstractDerived
             node.state == DIRTY && continue
             node.state = DIRTY
             append!(queue, node.users)
@@ -245,7 +275,7 @@ function _invalidate_computeds!(source::AbstractNode)
     queue = collect(source.users)
     while !isempty(queue)
         node = popfirst!(queue)
-        node isa Computed || continue
+        node isa AbstractDerived || continue
         (node.state == DIRTY || node.state == COMPUTING) && continue
         node.state = DIRTY
         append!(queue, node.users)
@@ -274,6 +304,23 @@ function Base.setindex!(c::Computed{T}, value) where {T}
         c.version += 1
         propagate_dirty!(c)
         maybe_flush!(c.runtime)
+    end
+    return value
+end
+
+function Base.setindex!(l::Linked{T}, value) where {T}
+    l.in_setter && error("Re-entrant setter detected on Linked node")
+    rt = l.runtime
+    l.in_setter = true
+    prev_current = rt.current
+    rt.current = nothing
+    try
+        batch(rt) do
+            l.setter(convert(T, value))
+        end
+    finally
+        rt.current = prev_current
+        l.in_setter = false
     end
     return value
 end
@@ -362,6 +409,9 @@ end
 function to_obs end
 function from_obs end
 function dispose_bridge! end
+
+# ── Accessors-powered bidirectional computed (overridden by ext/AccessorsExt.jl) ──
+function computed_bidi end
 
 _ensure_node(node::AbstractNode) = node
 
