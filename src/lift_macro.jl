@@ -40,19 +40,44 @@ function lift(f, args...; kwargs...)
     end
 end
 
+function lift(::Type{T}, f, args...; kwargs...) where {T}
+    processed = map(_maybe_node, args)
+    nodes = filter(n -> n isa AbstractNode, processed)
+    rt = isempty(nodes) ? _GLOBAL_RT[] : runtime(nodes...)
+    computed(rt, T; kwargs...) do
+        f(map(to_value, processed)...)
+    end
+end
+
 macro lift(exp)
     exp = expand_fstrings(exp, __module__)
+
+    # Extract optional type annotation: @lift (expr)::T
+    result_type = nothing
+    if Base.isexpr(exp, :(::)) && length(exp.args) == 2
+        result_type = exp.args[2]
+        exp = exp.args[1]
+    end
+
     nodes = collect(find_dollar_nodes(exp))
     isempty(nodes) && error("No interpolated observables found. Use \$(obs) syntax.")
     sym_map = Dict(n => gensym("node") for n in nodes)
     replace_dollars!(exp, sym_map)
     syms = [sym_map[n] for n in nodes]
     let_bindings = [:($(esc(s)) = $_ensure_node($(esc(n)))) for (n, s) in zip(nodes, syms)]
+    rt_expr = :($runtime($(esc.(syms)...)))
+    computed_call = if result_type !== nothing
+        :($computed($rt_expr, $(esc(result_type))) do
+            $(esc(exp))
+        end)
+    else
+        :($computed($rt_expr) do
+            $(esc(exp))
+        end)
+    end
     quote
         let $(let_bindings...)
-            $computed($runtime($(esc.(syms)...))) do
-                $(esc(exp))
-            end
+            $computed_call
         end
     end
 end

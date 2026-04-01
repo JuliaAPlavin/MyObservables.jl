@@ -698,6 +698,13 @@ end
     v[] = 2.5
     @test t1[] == "abc 2.50 def"
     @test t2[] == "abc 2.50 defx"
+
+    # type annotation
+    a2 = Observable(1)
+    b2 = Observable(2)
+    c_typed = @lift ($a2 + $b2)::Float64
+    @test c_typed isa MyObservables.Computed{Float64}
+    @test c_typed[] === 3.0
 end
 
 @testitem "@lift with Observables.Observable" begin
@@ -804,6 +811,16 @@ end
     v1 = c5.version
     a[] = 9
     @test c5.version == v1  # no version bump, value still 0
+
+    # explicit type
+    c6 = lift(Float64, (x, y) -> x + y, a, b)
+    @test c6 isa MyObservables.Computed{Float64}
+    @test c6[] === 10.0
+
+    # explicit type with no nodes
+    c7 = lift(Float64, (x, y) -> x + y, 1, 2)
+    @test c7 isa MyObservables.Computed{Float64}
+    @test c7[] === 3.0
 end
 
 @testitem "lift function with Observables" begin
