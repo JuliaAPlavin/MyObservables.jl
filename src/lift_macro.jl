@@ -3,6 +3,15 @@ const _GLOBAL_RT = Ref(Runtime())
 Observable(val) = signal(_GLOBAL_RT[], val)
 
 
+expand_fstrings(x, mod) = x
+function expand_fstrings(e::Expr, mod)
+    if Base.isexpr(e, :macrocall) && length(e.args) >= 1 && e.args[1] == Symbol("@f_str")
+        return macroexpand(mod, e; recursive=true)
+    end
+    Expr(e.head, [expand_fstrings(a, mod) for a in e.args]...)
+end
+
+
 find_dollar_nodes(x) = Set{Any}()
 function find_dollar_nodes(e::Expr)
     if e.head == :$ && length(e.args) == 1
@@ -23,6 +32,7 @@ function replace_dollars!(e::Expr, sym_map)
 end
 
 macro lift(exp)
+    exp = expand_fstrings(exp, __module__)
     nodes = collect(find_dollar_nodes(exp))
     isempty(nodes) && error("No interpolated observables found. Use \$(obs) syntax.")
     sym_map = Dict(n => gensym("node") for n in nodes)

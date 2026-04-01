@@ -685,6 +685,19 @@ end
     @test log == [15]
     a[] = 3
     @test log == [15, 8]
+
+    # f-string support
+    using PyFormattedStrings
+    v = Observable(1.0)
+    t1 = @lift f"abc {$v:0.2f} def"
+    @test t1[] == "abc 1.00 def"
+
+    t2 = @lift f"abc {$v:0.2f} def" * "x"
+    @test t2[] == "abc 1.00 defx"
+
+    v[] = 2.5
+    @test t1[] == "abc 2.50 def"
+    @test t2[] == "abc 2.50 defx"
 end
 
 @testitem "@lift with Observables.Observable" begin
