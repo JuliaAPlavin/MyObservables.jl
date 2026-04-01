@@ -394,6 +394,34 @@ end
     @test log == [10]
 end
 
+@testitem "error in computed doesn't permanently block effects" begin
+    using MyObservables
+
+    rt = Runtime()
+    s = signal(rt, 1)
+    fail = Ref(false)
+
+    c = computed(rt) do
+        fail[] && error("boom")
+        s[] * 10
+    end
+
+    log = Int[]
+    e = effect!(rt) do
+        push!(log, c[])
+    end
+    @test log == [10]
+
+    # Trigger error in c during flush
+    fail[] = true
+    @test_throws ErrorException s[] = 2
+
+    # Fix the function and change signal — effect must recover
+    fail[] = false
+    s[] = 3
+    @test log == [10, 30]
+end
+
 @testitem "error in dep during deps_changed! doesn't poison parent" begin
     using MyObservables
 

@@ -261,14 +261,16 @@ end
 # ── Invalidation propagation ───────────────────────────────────────
 function propagate_dirty!(source::AbstractNode)
     queue = collect(source.users)
+    visited = Set{AbstractNode}()
     while !isempty(queue)
         node = popfirst!(queue)
+        node in visited && continue
+        push!(visited, node)
         if node isa AbstractDerived
-            node.state == DIRTY && continue
             node.state = DIRTY
             append!(queue, node.users)
         elseif node isa EffectNode
-            if !node.disposed && node.state != DIRTY
+            if !node.disposed
                 node.state = DIRTY
                 push!(node.runtime.pending_effects, node)
             end
