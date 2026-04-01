@@ -246,7 +246,7 @@ function _invalidate_computeds!(source::AbstractNode)
     while !isempty(queue)
         node = popfirst!(queue)
         node isa Computed || continue
-        node.state == DIRTY && continue
+        (node.state == DIRTY || node.state == COMPUTING) && continue
         node.state = DIRTY
         append!(queue, node.users)
     end
@@ -309,23 +309,43 @@ function batch(f, rt::Runtime)
 end
 
 # ── Sweep ───────────────────────────────────────────────────────────
+"""
+    sweep(f, signal::Signal, values) -> Vector
+    sweep(signal::Signal, values, target::AbstractNode) -> Vector
+
+Evaluate `f()` (or read `target[]`) for each value in `values`, temporarily setting `signal` to that value.
+Only downstream `Computed` nodes pulled by `f` are recomputed; effects are never triggered.
+The signal is restored to its original value afterwards.
+
+Reads inside `f` are not tracked as dependencies, so when used inside a `computed` body,
+the enclosing node must explicitly read any signals it should depend on.
+
+    trajectory = computed(rt) do
+        x[]  # explicitly depend on x
+        sweep(y, y_range, z)
+    end
+"""
 function sweep(f::Function, signal::Signal{T}, values) where {T}
     rt = runtime(signal)
-    rt.current !== nothing && error("sweep cannot be called from inside a computed or effect")
     saved_val = signal.value
+    saved_current = rt.current
+    rt.current = nothing
     rt.batch_depth += 1
     try
         map(values) do v
             signal.value = convert(T, v)
             signal.version += 1
             _invalidate_computeds!(signal)
-            f()
+            result = f()
+            @assert rt.current === nothing "sweep: f() must not leave rt.current set"
+            result
         end
     finally
         signal.value = saved_val
         signal.version += 1
         _invalidate_computeds!(signal)
         rt.batch_depth -= 1
+        rt.current = saved_current
     end
 end
 

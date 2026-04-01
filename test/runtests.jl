@@ -1215,4 +1215,27 @@ end
     end
     @test sweep(s7, [3, 7, -1, 4], downstream) == [30, 50, 0, 40]
     @test s7[] == 1
+
+    # sweep inside computed: trajectory depends only on explicitly read deps
+    rt8 = Runtime()
+    x8 = signal(rt8, 10)
+    y8 = signal(rt8, 0)
+    z8 = computed(rt8) do; x8[] + y8[]; end
+
+    trajectory = computed(rt8) do
+        x8[]  # explicitly track x
+        sweep(y8, [1, 2, 3], z8)
+    end
+    @test trajectory[] == [11, 12, 13]
+
+    traj_ver = trajectory.version
+    x8[] = 20
+    @test trajectory[] == [21, 22, 23]
+    @test trajectory.version > traj_ver  # recomputed (depends on x)
+
+    # y change does NOT trigger recompute (sweep doesn't track)
+    traj_ver = trajectory.version
+    y8[] = 99
+    @test trajectory.version == traj_ver  # not recomputed
+    @test trajectory[] == [21, 22, 23]
 end
