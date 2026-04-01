@@ -453,11 +453,12 @@ end
     @test c[] == 21
 end
 
-@testitem "effect error clears pending effects" begin
+@testitem "effect error doesn't orphan sibling effects" begin
     using MyObservables
 
     rt = Runtime()
     s = signal(rt, 0)
+    other = signal(rt, 0)
 
     log = Int[]
     e_good = effect!(rt) do
@@ -470,15 +471,17 @@ end
 
     @test log == [0]
 
-    # Use batch + reorder to ensure e_bad runs first in flush
+    # Force e_bad to run first in flush
     @test_throws ErrorException batch(rt) do
         s[] = 1
         filter!(e -> e !== e_bad, rt.pending_effects)
         pushfirst!(rt.pending_effects, e_bad)
     end
 
-    # Bug: e_good should NOT linger in pending_effects
-    @test isempty(rt.pending_effects)
+    # e_good should still be pending, not orphaned
+    # An unrelated signal change triggers flush, which should process e_good
+    other[] = 99
+    @test log == [0, 1]
 end
 
 @testitem "cycle detection" begin
