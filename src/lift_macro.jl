@@ -63,7 +63,11 @@ macro lift(exp)
     isempty(nodes) && return esc(exp)
 
     sym_map = Dict(n => gensym("node") for n in nodes)
-    replace_dollars!(exp, sym_map)
+    if Base.isexpr(exp, :$) && length(exp.args) == 1
+        exp = :($to_value($(sym_map[exp.args[1]])))
+    else
+        replace_dollars!(exp, sym_map)
+    end
     syms = [sym_map[n] for n in nodes]
     let_bindings = [:($(esc(s)) = $_maybe_node($(esc(n)))) for (n, s) in zip(nodes, syms)]
     computed_call = if result_type !== nothing

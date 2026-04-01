@@ -710,6 +710,12 @@ end
     @test (@lift 1 + 2) === 3
     plain_a = 10
     @test (@lift $plain_a + 1) === 11
+    @test (@lift $plain_a) === 10
+
+    # bare $node
+    bare = @lift $x
+    @test bare isa MyObservables.Computed
+    @test bare[] == 5.0
 
     # conditional dependency tracking: unused branch not computed
     rt2 = Runtime()
