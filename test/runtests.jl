@@ -848,3 +848,82 @@ end
     @test ax.title[] == "updated title"
 
 end
+
+@testitem "distribute NamedTuple" begin
+    using MyObservables
+
+    rt = Runtime()
+    s = signal(rt, (a=1, b="hello", c=3.0))
+    d = MyObservables.distribute(s)
+
+    @test d isa NamedTuple{(:a, :b, :c)}
+    @test d.a isa Computed{Int}
+    @test d.b isa Computed{String}
+    @test d.c isa Computed{Float64}
+    @test d.a[] == 1
+    @test d.b[] == "hello"
+    @test d.c[] == 3.0
+
+    s[] = (a=10, b="world", c=5.0)
+    @test d.a[] == 10
+    @test d.b[] == "world"
+    @test d.c[] == 5.0
+
+    # from Computed source
+    c = computed(rt) do; (x=s[].a * 2, y=s[].b) end
+    dc = MyObservables.distribute(c)
+    @test dc.x[] == 20
+    @test dc.y[] == "world"
+end
+
+@testitem "distribute Tuple" begin
+    using MyObservables
+
+    rt = Runtime()
+    s = signal(rt, (1, "hello", 3.0))
+    d = MyObservables.distribute(s)
+
+    @test d isa Tuple{Computed{Int}, Computed{String}, Computed{Float64}}
+    @test d[1][] == 1
+    @test d[2][] == "hello"
+    @test d[3][] == 3.0
+
+    s[] = (10, "world", 5.0)
+    @test d[1][] == 10
+    @test d[2][] == "world"
+    @test d[3][] == 5.0
+end
+
+@testitem "distribute AbstractVector" begin
+    using MyObservables
+    using StaticArrays
+
+    rt = Runtime()
+
+    # plain Vector
+    s = signal(rt, [1, 2, 3])
+    d = MyObservables.distribute(s)
+    @test d isa Vector{<:Computed}
+    @test length(d) == 3
+    @test d[1][] == 1
+    @test d[2][] == 2
+    @test d[3][] == 3
+
+    s[] = [10, 20, 30]
+    @test d[1][] == 10
+    @test d[2][] == 20
+    @test d[3][] == 30
+
+    # SVector preserves type
+    s2 = signal(rt, SVector(1, 2, 3))
+    d2 = MyObservables.distribute(s2)
+    @test d2 isa SVector{3, <:Computed}
+    @test d2[1][] == 1
+    @test d2[2][] == 2
+    @test d2[3][] == 3
+
+    s2[] = SVector(10, 20, 30)
+    @test d2[1][] == 10
+    @test d2[2][] == 20
+    @test d2[3][] == 30
+end
