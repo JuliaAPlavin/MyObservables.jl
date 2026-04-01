@@ -879,6 +879,41 @@ end
     @test c2[] == 210
 end
 
+@testitem "to_value cross-compat" begin
+    using MyObservables
+    using MyObservables: to_value
+    using Observables
+
+    rt = Runtime()
+
+    # MyObservables.to_value unwraps Observables
+    obs = Observables.Observable(42)
+    @test to_value(obs) == 42
+
+    # MyObservables.to_value still works on nodes
+    s = signal(rt, 10)
+    @test to_value(s) == 10
+
+    # MyObservables.to_value passes through plain values
+    @test to_value(3.14) === 3.14
+
+    # Observables.to_value unwraps MyObservables nodes
+    s2 = signal(rt, 99)
+    @test Observables.to_value(s2) == 99
+
+    c = computed(rt) do
+        s2[] + 1
+    end
+    @test Observables.to_value(c) == 100
+
+    # Observables.to_value still works on its own types
+    obs2 = Observables.Observable("test")
+    @test Observables.to_value(obs2) == "test"
+
+    # Observables.to_value passes through plain values
+    @test Observables.to_value(42) === 42
+end
+
 @testitem "CairoMakie integration" begin
     using MyObservables
     using CairoMakie

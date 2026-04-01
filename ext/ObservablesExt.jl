@@ -2,7 +2,8 @@ module ObservablesExt
 
 using MyObservables
 import MyObservables: AbstractNode, Signal, Computed, EffectNode, Runtime
-import Observables: Observable, on, off
+import Observables
+import Observables: Observable, AbstractObservable, on, off
 
 # ── to_obs: MyObservables → Observable ────────────────────────────────
 function MyObservables.to_obs(node::Union{Signal{T},Computed{T}}) where {T}
@@ -51,5 +52,9 @@ end
 
 MyObservables._ensure_node(obs::Observable) = MyObservables.from_obs(obs)
 MyObservables._maybe_node(obs::Observable) = MyObservables.from_obs(obs)
+
+# ── to_value cross-compat ───────────────────────────────────────────
+MyObservables.to_value(obs::AbstractObservable) = obs[]
+Observables.to_value(node::AbstractNode) = node[]
 
 end # module
