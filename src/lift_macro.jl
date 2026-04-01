@@ -23,7 +23,7 @@ end
 function replace_dollars!(e::Expr, sym_map)
     for (i, arg) in enumerate(e.args)
         if arg isa Expr && arg.head == :$ && length(arg.args) == 1
-            e.args[i] = Expr(:ref, sym_map[arg.args[1]])
+            e.args[i] = :($to_value($(sym_map[arg.args[1]])))
         elseif arg isa Expr
             replace_dollars!(arg, sym_map)
         end
@@ -34,8 +34,8 @@ end
 function lift(f, args...; kwargs...)
     processed = map(_maybe_node, args)
     nodes = filter(n -> n isa AbstractNode, processed)
-    rt = isempty(nodes) ? _GLOBAL_RT[] : runtime(nodes...)
-    computed(rt; kwargs...) do
+    isempty(nodes) && return f(args...)
+    computed(runtime(nodes...); kwargs...) do
         f(map(to_value, processed)...)
     end
 end
@@ -43,8 +43,8 @@ end
 function lift(::Type{T}, f, args...; kwargs...) where {T}
     processed = map(_maybe_node, args)
     nodes = filter(n -> n isa AbstractNode, processed)
-    rt = isempty(nodes) ? _GLOBAL_RT[] : runtime(nodes...)
-    computed(rt, T; kwargs...) do
+    isempty(nodes) && return convert(T, f(args...))
+    computed(runtime(nodes...), T; kwargs...) do
         f(map(to_value, processed)...)
     end
 end
@@ -60,24 +60,29 @@ macro lift(exp)
     end
 
     nodes = collect(find_dollar_nodes(exp))
-    isempty(nodes) && error("No interpolated observables found. Use \$(obs) syntax.")
+    isempty(nodes) && return esc(exp)
+
     sym_map = Dict(n => gensym("node") for n in nodes)
     replace_dollars!(exp, sym_map)
     syms = [sym_map[n] for n in nodes]
-    let_bindings = [:($(esc(s)) = $_ensure_node($(esc(n)))) for (n, s) in zip(nodes, syms)]
-    rt_expr = :($runtime($(esc.(syms)...)))
+    let_bindings = [:($(esc(s)) = $_maybe_node($(esc(n)))) for (n, s) in zip(nodes, syms)]
     computed_call = if result_type !== nothing
-        :($computed($rt_expr, $(esc(result_type))) do
+        :($computed($runtime(_reactive...), $(esc(result_type))) do
             $(esc(exp))
         end)
     else
-        :($computed($rt_expr) do
+        :($computed($runtime(_reactive...)) do
             $(esc(exp))
         end)
     end
     quote
         let $(let_bindings...)
-            $computed_call
+            local _reactive = Base.filter(n -> n isa $AbstractNode, ($(esc.(syms)...),))
+            if isempty(_reactive)
+                $(esc(exp))
+            else
+                $computed_call
+            end
         end
     end
 end

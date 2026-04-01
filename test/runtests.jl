@@ -705,6 +705,34 @@ end
     c_typed = @lift ($a2 + $b2)::Float64
     @test c_typed isa MyObservables.Computed{Float64}
     @test c_typed[] === 3.0
+
+    # no reactive deps — returns plain value
+    @test (@lift 1 + 2) === 3
+    plain_a = 10
+    @test (@lift $plain_a + 1) === 11
+
+    # conditional dependency tracking: unused branch not computed
+    rt2 = Runtime()
+    toggle = signal(rt2, true)
+    s2 = signal(rt2, 1)
+    a_count = Ref(0)
+    expensive_a = computed(rt2) do
+        a_count[] += 1
+        s2[] * 10
+    end
+    b_count = Ref(0)
+    expensive_b = computed(rt2) do
+        b_count[] += 1
+        s2[] * 100
+    end
+    result = @lift $toggle ? $expensive_a : $expensive_b
+    @test result[] == 10
+    @test a_count[] == 1
+    @test b_count[] == 0
+
+    toggle[] = false
+    @test result[] == 100
+    @test b_count[] == 1
 end
 
 @testitem "@lift with Observables.Observable" begin
@@ -799,9 +827,14 @@ end
     a[] = 2
     @test c3[] == 200
 
-    # no nodes at all
+    # no nodes at all — returns plain value
     c4 = lift((x, y) -> x + y, 1, 2)
-    @test c4[] == 3
+    @test c4 === 3
+    @test !(c4 isa MyObservables.AbstractNode)
+
+    # no arguments at all
+    c4b = lift(() -> 42)
+    @test c4b === 42
 
     # skip_equal kwarg
     c5 = lift(x -> x ÷ 10, a; skip_equal=true)
@@ -817,10 +850,10 @@ end
     @test c6 isa MyObservables.Computed{Float64}
     @test c6[] === 10.0
 
-    # explicit type with no nodes
+    # explicit type with no nodes — returns plain value
     c7 = lift(Float64, (x, y) -> x + y, 1, 2)
-    @test c7 isa MyObservables.Computed{Float64}
-    @test c7[] === 3.0
+    @test c7 === 3.0
+    @test !(c7 isa MyObservables.AbstractNode)
 end
 
 @testitem "lift function with Observables" begin
