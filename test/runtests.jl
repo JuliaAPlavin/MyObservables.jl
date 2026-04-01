@@ -1627,3 +1627,142 @@ end
     s[] = -5
     @test log == [[1, 2], [0]]
 end
+
+@testitem "debounce" begin
+    using MyObservables
+
+    DT = 0.05
+
+    # initial value
+    rt = Runtime()
+    s = signal(rt, 10)
+    d = debounce(s, DT)
+    @test d.signal[] == 10
+
+    # basic: set source, wait, check output
+    s[] = 20
+    @test d.signal[] == 10  # not yet updated
+    sleep(DT + 0.05)
+    @test d.signal[] == 20
+
+    # rapid changes: only final value emitted
+    s[] = 1
+    s[] = 2
+    s[] = 3
+    @test d.signal[] == 20  # still old, timer keeps resetting
+    sleep(DT + 0.05)
+    @test d.signal[] == 3  # final value
+
+    # timer reset: change, wait less than dt, change again
+    s[] = 100
+    sleep(DT / 2)
+    s[] = 200
+    sleep(DT / 2)
+    @test d.signal[] == 3  # timer was reset, not fired yet
+    sleep(DT)
+    @test d.signal[] == 200
+
+    # dispose stops updates
+    dispose!(d.effect)
+    s[] = 999
+    sleep(DT + 0.05)
+    @test d.signal[] == 200  # no update after dispose
+
+    # works with downstream effects
+    rt2 = Runtime()
+    s2 = signal(rt2, 0)
+    d2 = debounce(s2, DT)
+    log = Int[]
+    effect!(rt2) do
+        push!(log, d2.signal[])
+    end
+    @test log == [0]
+    s2[] = 42
+    @test log == [0]  # not yet
+    sleep(DT + 0.05)
+    @test log == [0, 42]
+
+    # Signal{Any} with type change
+    rt3 = Runtime()
+    s3 = signal(rt3, Any, 1)
+    d3 = debounce(s3, DT)
+    @test d3.signal[] === 1
+    s3[] = 2.5
+    sleep(DT + 0.05)
+    @test d3.signal[] === 2.5
+    s3[] = "hello"
+    sleep(DT + 0.05)
+    @test d3.signal[] === "hello"
+end
+
+@testitem "throttle" begin
+    using MyObservables
+
+    DT = 0.05
+
+    # initial value
+    rt = Runtime()
+    s = signal(rt, 10)
+    t = throttle(s, DT)
+    @test t.signal[] == 10
+
+    # creation starts a cooldown; first change is suppressed (trailing edge)
+    s[] = 20
+    @test t.signal[] == 10  # in cooldown from creation
+    sleep(DT + 0.05)
+    @test t.signal[] == 20  # trailing edge
+
+    # after cooldown expires, next change is immediate (leading edge)
+    sleep(DT + 0.05)  # ensure back to IDLE
+    s[] = 30
+    @test t.signal[] == 30  # leading edge: immediate
+
+    # further changes during cooldown are suppressed
+    s[] = 40
+    @test t.signal[] == 30  # suppressed
+    s[] = 50
+    @test t.signal[] == 30  # still suppressed
+
+    # trailing edge emits last value
+    sleep(DT + 0.05)
+    @test t.signal[] == 50
+
+    # dispose stops updates
+    sleep(DT + 0.05)
+    dispose!(t.effect)
+    s[] = 999
+    sleep(DT + 0.05)
+    @test t.signal[] == 50  # no update after dispose
+
+    # works with downstream effects
+    rt2 = Runtime()
+    s2 = signal(rt2, 0)
+    t2 = throttle(s2, DT)
+    log = Int[]
+    effect!(rt2) do
+        push!(log, t2.signal[])
+    end
+    @test log == [0]
+    # creation cooldown; changes are suppressed then trailing fires
+    s2[] = 1
+    s2[] = 2
+    @test log == [0]  # suppressed during cooldown
+    sleep(DT + 0.05)
+    @test log == [0, 2]  # trailing edge
+    # back to IDLE, leading edge works
+    sleep(DT + 0.05)
+    s2[] = 5
+    @test log == [0, 2, 5]  # immediate
+
+    # Signal{Any} with type change
+    rt3 = Runtime()
+    s3 = signal(rt3, Any, 1)
+    t3 = throttle(s3, DT)
+    @test t3.signal[] === 1
+    sleep(DT + 0.05)  # wait for creation cooldown
+    s3[] = 2.5
+    @test t3.signal[] === 2.5  # leading edge
+    sleep(DT + 0.05)
+    s3[] = "hello"
+    @test t3.signal[] === "hello"  # leading edge
+end

@@ -2,6 +2,7 @@ module MyObservables
 
 export Runtime, Signal, Computed, EffectNode
 export signal, computed, effect!, dispose!, batch, to_obs, from_obs, dispose_bridge!
+export throttle, debounce
 export runtime
 
 # ── Node state ──────────────────────────────────────────────────────
@@ -459,5 +460,6 @@ function _distribute(rt, node, ::Type{V}; skip_equal) where {V<:AbstractVector}
 end
 
 include("lift_macro.jl")
+include("timed.jl")
 
 end # module
