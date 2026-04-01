@@ -6,6 +6,10 @@ import Makie
 import Makie.ComputePipeline
 import Makie.ComputePipeline: add_input!, ComputeGraph
 
+# Support ComputePipeline.Computed in lift/@lift
+MyObservables._maybe_node(c::ComputePipeline.Computed) = MyObservables.from_obs(Makie.map(identity, c))
+MyObservables.to_value(c::ComputePipeline.Computed) = c[]
+
 # Block attributes — independent, keep using to_obs bridge
 Makie.value_convert(x::AbstractNode) = to_obs(x)
 function Makie.init_observable!(@nospecialize(block), key::Symbol, @nospecialize(OT), value::AbstractNode)
