@@ -50,5 +50,6 @@ function MyObservables.dispose_bridge!(rt::Runtime, obs::Observable)
 end
 
 MyObservables._ensure_node(obs::Observable) = MyObservables.from_obs(obs)
+MyObservables._maybe_node(obs::Observable) = MyObservables.from_obs(obs)
 
 end # module

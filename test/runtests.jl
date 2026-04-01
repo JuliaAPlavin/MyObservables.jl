@@ -763,6 +763,72 @@ end
     @test hyp[] == 13.0
 end
 
+@testitem "lift function" begin
+    using MyObservables
+    using MyObservables: lift, _GLOBAL_RT
+
+    rt = Runtime()
+
+    # single node
+    s = signal(rt, 5)
+    c = lift(x -> 2x, s)
+    @test c[] == 10
+    s[] = 7
+    @test c[] == 14
+
+    # multiple nodes
+    a = signal(rt, 3)
+    b = signal(rt, 4)
+    c2 = lift((x, y) -> x + y, a, b)
+    @test c2[] == 7
+    a[] = 10
+    @test c2[] == 14
+    b[] = 1
+    @test c2[] == 11
+
+    # mixed node + plain value
+    c3 = lift((x, y) -> x * y, a, 100)
+    @test c3[] == 1000
+    a[] = 2
+    @test c3[] == 200
+
+    # no nodes at all
+    c4 = lift((x, y) -> x + y, 1, 2)
+    @test c4[] == 3
+
+    # skip_equal kwarg
+    c5 = lift(x -> x ÷ 10, a; skip_equal=true)
+    @test c5[] == 0
+    a[] = 5
+    @test c5[] == 0
+    v1 = c5.version
+    a[] = 9
+    @test c5.version == v1  # no version bump, value still 0
+end
+
+@testitem "lift function with Observables" begin
+    using MyObservables
+    using MyObservables: lift, _GLOBAL_RT
+    using Observables
+
+    obs = Observables.Observable(10)
+    c = lift(x -> x + 1, obs)
+    @test c isa MyObservables.Computed
+    @test c[] == 11
+    obs[] = 20
+    @test c[] == 21
+
+    # mixed Observable + Signal
+    s = signal(_GLOBAL_RT[], 100)
+    obs2 = Observables.Observable(5)
+    c2 = lift((a, b) -> a + b, s, obs2)
+    @test c2[] == 105
+    s[] = 200
+    @test c2[] == 205
+    obs2[] = 10
+    @test c2[] == 210
+end
+
 @testitem "CairoMakie integration" begin
     using MyObservables
     using CairoMakie

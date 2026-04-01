@@ -31,6 +31,15 @@ function replace_dollars!(e::Expr, sym_map)
     e
 end
 
+function lift(f, args...; kwargs...)
+    processed = map(_maybe_node, args)
+    nodes = filter(n -> n isa AbstractNode, processed)
+    rt = isempty(nodes) ? _GLOBAL_RT[] : runtime(nodes...)
+    computed(rt; kwargs...) do
+        f(map(to_value, processed)...)
+    end
+end
+
 macro lift(exp)
     exp = expand_fstrings(exp, __module__)
     nodes = collect(find_dollar_nodes(exp))

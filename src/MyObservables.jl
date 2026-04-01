@@ -310,6 +310,12 @@ function dispose_bridge! end
 
 _ensure_node(node::AbstractNode) = node
 
+_maybe_node(node::AbstractNode) = node
+_maybe_node(val) = val
+
+to_value(node::AbstractNode) = node[]
+to_value(val) = val
+
 # ── Distribute: Composite{Node} → Composite of Nodes ─────────────
 distribute(node::AbstractNode{T}; skip_equal=false) where {T} =
     _distribute(runtime(node), node, T; skip_equal)
