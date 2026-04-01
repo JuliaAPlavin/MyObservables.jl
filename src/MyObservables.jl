@@ -427,6 +427,11 @@ _maybe_node(val) = val
 to_value(node::AbstractNode) = node[]
 to_value(val) = val
 
+# ── Changes: deduplicate equal values ─────────────────────────────
+changes(node::AbstractNode) = computed(runtime(node); skip_equal=true) do
+    node[]
+end
+
 # ── Distribute: Composite{Node} → Composite of Nodes ─────────────
 distribute(node::AbstractNode{T}; skip_equal=false) where {T} =
     _distribute(runtime(node), node, T; skip_equal)

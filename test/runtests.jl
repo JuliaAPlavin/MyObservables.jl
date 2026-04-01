@@ -1569,3 +1569,32 @@ end
     va[] = va[]  # PutGet: setting current value is no-op (conceptually)
     @test s[] == old_s
 end
+
+@testitem "changes" begin
+    using MyObservables: Runtime, signal, computed, effect!, changes
+
+    rt = Runtime()
+    s = signal(rt, 1)
+    c = computed(rt) do
+        s[] > 0 ? [1, 2] : [0]
+    end
+    d = changes(c)
+
+    log = []
+    effect!(rt) do
+        push!(log, d[])
+    end
+    @test log == [[1, 2]]
+
+    # same value (new array, but isequal) → no propagation
+    s[] = 2
+    @test log == [[1, 2]]
+
+    # different value → propagates
+    s[] = -1
+    @test log == [[1, 2], [0]]
+
+    # same again
+    s[] = -5
+    @test log == [[1, 2], [0]]
+end
