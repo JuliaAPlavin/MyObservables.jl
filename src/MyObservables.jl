@@ -311,33 +311,29 @@ function dispose_bridge! end
 _ensure_node(node::AbstractNode) = node
 
 # ── Distribute: Composite{Node} → Composite of Nodes ─────────────
-function distribute(node; skip_equal=false)
-    rt = runtime(node)
-    _distribute(rt, node, peek(node); skip_equal)
-end
+distribute(node::Union{Signal{T}, Computed{T}}; skip_equal=false) where {T} =
+    _distribute(runtime(node), node, T; skip_equal)
 
-function _distribute(rt, node, ::NT; skip_equal) where {names, NT<:NamedTuple{names}}
+function _distribute(rt, node, ::Type{NT}; skip_equal) where {names, NT<:NamedTuple{names}}
     map(NamedTuple{names}(names)) do k
-        T = fieldtype(NT, k)
-        computed(rt, T; skip_equal) do
+        computed(rt, fieldtype(NT, k); skip_equal) do
             getproperty(node[], k)
         end
     end
 end
 
-function _distribute(rt, node, ::T; skip_equal) where {T<:Tuple}
+function _distribute(rt, node, ::Type{T}; skip_equal) where {T<:Tuple}
     ntuple(fieldcount(T)) do i
-        Ti = fieldtype(T, i)
-        computed(rt, Ti; skip_equal) do
+        computed(rt, fieldtype(T, i); skip_equal) do
             node[][i]
         end
     end
 end
 
-function _distribute(rt, node, val::AbstractVector; skip_equal)
-    T = eltype(val)
+function _distribute(rt, node, ::Type{V}; skip_equal) where {V<:AbstractVector}
+    val = peek(node)
     map(val, eachindex(val)) do _, i
-        computed(rt, T; skip_equal) do
+        computed(rt, eltype(V); skip_equal) do
             node[][i]
         end
     end

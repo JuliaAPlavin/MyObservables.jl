@@ -892,6 +892,20 @@ end
     @test d[1][] == 10
     @test d[2][] == "world"
     @test d[3][] == 5.0
+
+    # union types: element type changes within the union
+    s2 = signal(rt, Tuple{Union{Nothing,Int}, Float64}, (nothing, 1.0))
+    d2 = MyObservables.distribute(s2)
+    @test d2[1] isa Computed{Union{Nothing,Int}}
+    @test d2[1][] === nothing
+    @test d2[2][] == 1.0
+
+    s2[] = (42, 2.0)
+    @test d2[1][] == 42
+    @test d2[2][] == 2.0
+
+    s2[] = (nothing, 3.0)
+    @test d2[1][] === nothing
 end
 
 @testitem "distribute AbstractVector" begin
