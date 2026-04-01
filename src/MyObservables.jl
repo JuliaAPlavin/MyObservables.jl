@@ -14,11 +14,11 @@ abstract type AbstractDerived{T} <: AbstractNode{T} end
 # ── Runtime ─────────────────────────────────────────────────────────
 mutable struct Runtime
     current::Union{Nothing,AbstractNode}
-    pending_effects::Vector{AbstractNode}
+    pending_effects::Set{AbstractNode}
     batch_depth::Int
     to_bridges::WeakKeyDict{Any,Any}      # Observable → EffectNode
     from_bridges::WeakKeyDict{Any,Any}    # Observable → ObserverFunction
-    Runtime() = new(nothing, AbstractNode[], 0, WeakKeyDict{Any,Any}(), WeakKeyDict{Any,Any}())
+    Runtime() = new(nothing, Set{AbstractNode}(), 0, WeakKeyDict{Any,Any}(), WeakKeyDict{Any,Any}())
 end
 
 # ── Signal ──────────────────────────────────────────────────────────
@@ -341,7 +341,7 @@ end
 
 function flush!(rt::Runtime)
     while !isempty(rt.pending_effects)
-        e = popfirst!(rt.pending_effects)
+        e = pop!(rt.pending_effects)
         (e.disposed || e.state != DIRTY) && continue
         run_effect!(e)
     end
@@ -404,7 +404,7 @@ sweep(signal::Signal, values, target::AbstractNode) = sweep(() -> target[], sign
 # ── Dispose ─────────────────────────────────────────────────────────
 function dispose!(e::EffectNode)
     e.disposed = true
-    filter!(!=(e), e.runtime.pending_effects)
+    delete!(e.runtime.pending_effects, e)
     remove_from_deps!(e)
 end
 
