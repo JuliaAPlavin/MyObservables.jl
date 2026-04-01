@@ -1111,3 +1111,108 @@ end
     @test d2[2][] == 20
     @test d2[3][] == 30
 end
+
+@testitem "sweep" begin
+    using MyObservables
+    using MyObservables: sweep
+
+    # basic sweep with do-block
+    rt = Runtime()
+    x = signal(rt, 0)
+    y = computed(rt) do
+        x[] * 2
+    end
+    @test sweep(x, 1:5) do; y[]; end == [2, 4, 6, 8, 10]
+
+    # direct form
+    @test sweep(x, 1:5, y) == [2, 4, 6, 8, 10]
+
+    # signal restored after sweep
+    @test x[] == 0
+    @test y[] == 0
+
+    # effects not triggered during sweep
+    effect_log = Int[]
+    e = effect!(rt) do
+        push!(effect_log, x[])
+    end
+    @test effect_log == [0]
+    sweep(x, [10, 20, 30], y)
+    @test effect_log == [0]  # effect did not fire
+
+    # effects still work normally after sweep
+    x[] = 5
+    @test effect_log == [0, 5]
+    @test y[] == 10
+
+    # deep chain
+    rt2 = Runtime()
+    a = signal(rt2, 1)
+    b = computed(rt2) do; a[] + 1; end
+    c = computed(rt2) do; b[] * 3; end
+    d = computed(rt2) do; c[] - 2; end
+    @test sweep(a, [1, 2, 3], d) == [4, 7, 10]
+    @test a[] == 1
+
+    # only target chain recomputed, not other branches
+    rt3 = Runtime()
+    s = signal(rt3, 1)
+    target_count = Ref(0)
+    target = computed(rt3) do
+        target_count[] += 1
+        s[] * 10
+    end
+    other_count = Ref(0)
+    other = computed(rt3) do
+        other_count[] += 1
+        s[] + 100
+    end
+    # pull both to establish deps
+    @test target[] == 10
+    @test other[] == 101
+    @test target_count[] == 1
+    @test other_count[] == 1
+
+    @test sweep(s, 1:3, target) == [10, 20, 30]
+    @test target_count[] == 4  # recomputed 3 times during sweep
+    @test other_count[] == 1   # never recomputed
+
+    # diamond graph
+    rt4 = Runtime()
+    root = signal(rt4, 2)
+    left = computed(rt4) do; root[] + 1; end
+    right = computed(rt4) do; root[] * 2; end
+    bottom = computed(rt4) do; left[] + right[]; end
+    @test sweep(root, [1, 2, 3], bottom) == [4, 7, 10]
+    @test root[] == 2
+
+    # mixed deps: target depends on swept signal AND another signal
+    rt5 = Runtime()
+    p = signal(rt5, 10)
+    q = signal(rt5, 100)
+    mix = computed(rt5) do; p[] + q[]; end
+    @test sweep(p, [1, 2, 3], mix) == [101, 102, 103]
+    @test p[] == 10
+    @test q[] == 100
+
+    # error in f — signal still restored
+    rt6 = Runtime()
+    s6 = signal(rt6, 0)
+    @test_throws ErrorException sweep(s6, [1, 2, 3]) do
+        s6[] == 2 && error("boom")
+        s6[]
+    end
+    @test s6[] == 0  # restored despite error
+
+    # skip_equal computed in chain
+    rt7 = Runtime()
+    s7 = signal(rt7, 1)
+    clamped = computed(rt7; skip_equal=true) do
+        clamp(s7[], 0, 5)
+    end
+    downstream = computed(rt7) do
+        clamped[] * 10
+    end
+    @test sweep(s7, [3, 7, -1, 4], downstream) == [30, 50, 0, 40]
+    @test s7[] == 1
+end

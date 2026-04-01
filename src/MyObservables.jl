@@ -29,8 +29,8 @@ mutable struct Signal{T} <: AbstractNode{T}
     const skip_equal::Bool
 end
 
-signal(rt::Runtime, value::T; skip_equal::Bool=false) where {T} = Signal{T}(rt, value, UInt64(1), Set{AbstractNode}(), skip_equal)
-signal(rt::Runtime, ::Type{T}, value; skip_equal::Bool=false) where {T} = Signal{T}(rt, convert(T, value), UInt64(1), Set{AbstractNode}(), skip_equal)
+signal(rt::Runtime, value::T; skip_equal::Bool=false) where {T} = Signal{T}(rt, value, 1, Set{AbstractNode}(), skip_equal)
+signal(rt::Runtime, ::Type{T}, value; skip_equal::Bool=false) where {T} = Signal{T}(rt, convert(T, value), 1, Set{AbstractNode}(), skip_equal)
 
 # ── Runtime extraction ────────────────────────────────────────────
 function runtime(node::AbstractNode, nodes::AbstractNode...)
@@ -240,6 +240,18 @@ function propagate_dirty!(source::AbstractNode)
     end
 end
 
+# ── Invalidation (computeds only, no effects) ─────────────────────────
+function _invalidate_computeds!(source::AbstractNode)
+    queue = collect(source.users)
+    while !isempty(queue)
+        node = popfirst!(queue)
+        node isa Computed || continue
+        node.state == DIRTY && continue
+        node.state = DIRTY
+        append!(queue, node.users)
+    end
+end
+
 # ── setindex!: write + invalidate + flush ───────────────────────────
 function Base.setindex!(s::Signal{T}, value) where {T}
     new_value = convert(T, value)
@@ -295,6 +307,29 @@ function batch(f, rt::Runtime)
         maybe_flush!(rt)
     end
 end
+
+# ── Sweep ───────────────────────────────────────────────────────────
+function sweep(f::Function, signal::Signal{T}, values) where {T}
+    rt = runtime(signal)
+    rt.current !== nothing && error("sweep cannot be called from inside a computed or effect")
+    saved_val = signal.value
+    rt.batch_depth += 1
+    try
+        map(values) do v
+            signal.value = convert(T, v)
+            signal.version += 1
+            _invalidate_computeds!(signal)
+            f()
+        end
+    finally
+        signal.value = saved_val
+        signal.version += 1
+        _invalidate_computeds!(signal)
+        rt.batch_depth -= 1
+    end
+end
+
+sweep(signal::Signal, values, target::AbstractNode) = sweep(() -> target[], signal, values)
 
 # ── Dispose ─────────────────────────────────────────────────────────
 function dispose!(e::EffectNode)
