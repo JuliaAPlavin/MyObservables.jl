@@ -8,7 +8,7 @@ export runtime
 @enum NodeState::UInt8 CLEAN=0 DIRTY=1 COMPUTING=2
 
 # ── Abstract base ───────────────────────────────────────────────────
-abstract type AbstractNode end
+abstract type AbstractNode{T} end
 
 # ── Runtime ─────────────────────────────────────────────────────────
 mutable struct Runtime
@@ -21,7 +21,7 @@ mutable struct Runtime
 end
 
 # ── Signal ──────────────────────────────────────────────────────────
-mutable struct Signal{T} <: AbstractNode
+mutable struct Signal{T} <: AbstractNode{T}
     const runtime::Runtime
     value::T
     version::UInt64
@@ -42,7 +42,7 @@ function runtime(node::AbstractNode, nodes::AbstractNode...)
 end
 
 # ── Computed ────────────────────────────────────────────────────────
-mutable struct Computed{T} <: AbstractNode
+mutable struct Computed{T} <: AbstractNode{T}
     const runtime::Runtime
     const f
     version::UInt64
@@ -69,7 +69,7 @@ function computed(f, rt::Runtime; skip_equal::Bool=false)
 end
 
 # ── Effect ──────────────────────────────────────────────────────────
-mutable struct EffectNode <: AbstractNode
+mutable struct EffectNode <: AbstractNode{Nothing}
     const runtime::Runtime
     const f
     state::NodeState
@@ -311,7 +311,7 @@ function dispose_bridge! end
 _ensure_node(node::AbstractNode) = node
 
 # ── Distribute: Composite{Node} → Composite of Nodes ─────────────
-distribute(node::Union{Signal{T}, Computed{T}}; skip_equal=false) where {T} =
+distribute(node::AbstractNode{T}; skip_equal=false) where {T} =
     _distribute(runtime(node), node, T; skip_equal)
 
 function _distribute(rt, node, ::Type{NT}; skip_equal) where {names, NT<:NamedTuple{names}}
